@@ -1,12 +1,11 @@
 import abc
 import datetime
-import io
 from dataclasses import dataclass, field
 from typing import List, Literal, Optional, Tuple, Union
 
 import numpy as np
 
-from stkfiles.times import ISOYMD, EpochTimeStrategy, EpSec, TimeFormatStrategy
+from stkfiles.times import ISOYMD, EpSec, TimeFormatStrategy
 from stkfiles.typing import MessageLevel, TimeFormat
 
 # from stkfiles.utils import format_time, root_sum_square
@@ -105,7 +104,7 @@ class AbstractStkFile:
             msg = f"TimeFormat {self.time_format!r} is not supported"
             raise ValueError(msg)
 
-    def _make_header(self) -> str:
+    def make_header(self) -> None:
         if self.message_level:
             self._header.append(f"MessageLevel  {self.message_level}")
         if self.time_format:
@@ -136,8 +135,22 @@ class AttitudeFile(AbstractStkFile):
         if self.validator is None:
             self.validator = attitude_strategies.get(self.format, NoStrategy())
 
-    def _make_header(self) -> str:
-        super()._make_header()
+    def make_header(self) -> str:
+        super().make_header()
+        if self.central_body:
+            self._header.append(f"CentralBody    {self.central_body}")
+        if self.coordinate_axes:
+            self._header.append(f"CoordinateAxes {self.coordinate_axes}")
+            if self.coordinate_axes in ["TrueOfDate", "MeanOfDate", "TEMEOfDate"]:
+                if self.coordinate_axes_epoch:
+                    coord_epoch = self.time_formatter.format(
+                        np.array(self.coordinate_axes_epoch)
+                    )
+                    self._header.append(f"CoordinateAxesEpoch {coord_epoch}")
+        if self.interpolation_method:
+            self._header.append(f"InterpolationMethod {self.interpolation_method}")
+        if self.interpolation_order:
+            self._header.append(f"InterpolationOrder {self.interpolation_order}")
 
 
 # class StkDataFile(BaseModel):
