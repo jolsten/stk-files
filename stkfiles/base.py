@@ -62,6 +62,14 @@ class NoStrategy(DataStrategy):
     ) -> Tuple[np.ndarray, np.ndarray]:
         return times, data
 
+    def format(self, times: np.ndarray, data: np.ndarray) -> List[str]:
+        data = []
+        for time, row in zip(times, data):
+            row_text = " ".join([str(value) for value in row])
+            line = f"{time} {row_text}"
+            data.append(line)
+        return data
+
 
 @dataclass
 class QuaternionStrategy(DataStrategy):
@@ -132,15 +140,15 @@ class AttitudeFile(AbstractStkFile):
             msg = "format kwarg must be provided"
             raise ValueError(msg)
 
-        if self.validator is None:
-            self.validator = attitude_strategies.get(self.format, NoStrategy())
+        if self.data_strategy is None:
+            self.data_strategy = attitude_strategies.get(self.format, NoStrategy())
 
     def make_header(self) -> str:
         super().make_header()
         if self.central_body:
-            self._header.append(f"CentralBody    {self.central_body}")
+            self._header.append(f"CentralBody         {self.central_body}")
         if self.coordinate_axes:
-            self._header.append(f"CoordinateAxes {self.coordinate_axes}")
+            self._header.append(f"CoordinateAxes      {self.coordinate_axes}")
             if self.coordinate_axes in ["TrueOfDate", "MeanOfDate", "TEMEOfDate"]:
                 if self.coordinate_axes_epoch:
                     coord_epoch = self.time_formatter.format(
@@ -150,58 +158,4 @@ class AttitudeFile(AbstractStkFile):
         if self.interpolation_method:
             self._header.append(f"InterpolationMethod {self.interpolation_method}")
         if self.interpolation_order:
-            self._header.append(f"InterpolationOrder {self.interpolation_order}")
-
-
-# class StkDataFile(BaseModel):
-#     data_keyword: ClassVar[BeginKeywords] = ...
-
-#     version: FileVersion = Field(default="stk.v.12.0", alias=None)
-
-#     message_level: Optional[MessageLevel] = Field(default=None, alias="MessageLevel")
-#     scenario_epoch: Optional[StkDatetime] = Field(default=None, alias="ScenarioEpoch")
-#     time_format: Optional[TimeFormat] = Field(default="ISO-YMD", alias="TimeFormat")
-#     format_: DataFormat
-
-#     _fh: Optional[io.TextIOBase] = PrivateAttr()
-
-#     def make_header(self) -> List[Tuple[str, str]]:
-#         header = [f"{self.version}"]
-
-#         if self.message_level:
-#             header.append(("MessageLevel", self.message_level))
-
-#         lines = []
-#         for field, attrs in self.model_fields.items():
-#             value = getattr(self, field, None)
-#             if value:
-#                 lines.append((attrs.alias, value))
-
-#         header.extend(self.header.to_lines())
-#         header.append(f"BEGIN {self.data_keyword}")
-#         return header
-
-#     def make_trailer(self) -> List[str]:
-#         trailer = [f"END {self.data_keyword}"]
-#         return trailer
-
-#     def _format_quaternions(
-#         self, time: datetime.datetime, data: Iterable[float]
-#     ) -> str:
-#         ts = format_time(time, self.header.time_format)
-#         data = [f"{value:+15.12e}" for value in data]
-#         return f"""{ts} {" ".join(data)}"""
-
-#     def _format_data(self, time: datetime.datetime, data: Iterable[float]) -> str:
-#         return self._format_quaternions(time, data)
-
-#     def _validate_data(self, time: datetime.datetime, data: Iterable[float]) -> str:
-#         pass
-
-#     def to_file(self, path: FilePath) -> None:
-#         pass
-#         # with open(path, "w") as file:
-#         #     for line in self._make_header():
-#         #         print(line, file=file)
-
-#         #     for
+            self._header.append(f"InterpolationOrder  {self.interpolation_order}")
