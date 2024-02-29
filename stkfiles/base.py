@@ -1,12 +1,11 @@
 import abc
 import datetime
 import io
-import typing
-from typing import Any, List, Literal, Optional, Tuple, Type, Union
+from typing import List, Literal, Optional, Union
 
 import numpy as np
 
-from stkfiles.times import ISOYMD, EpSec, TimeFormatStrategy
+from stkfiles import formatters, validators
 from stkfiles.typing import MessageLevel, TimeFormat
 
 # from stkfiles.utils import format_time, root_sum_square
@@ -45,145 +44,6 @@ EPOCH_TIME_FORMATS = ["EpSec"]
 QUATERNION_FORMATS = ["Quaternions", "QuatScalarFirst"]
 ANGLE_FORMATS = ["EulerAngles", "YPRAngles"]
 
-# @dataclass
-# class DataStrategy(abc.ABC):
-#     number_format: str = "%8.6e"
-
-#     @abc.abstractmethod
-#     def validate(
-#         self, times: np.ndarray, data: np.ndarray
-#     ) -> Tuple[np.ndarray, np.ndarray]:
-#         ...
-
-#     @abc.abstractmethod
-#     def format(self, times: np.ndarray, data: np.ndarray) -> List[str]:
-#         ...
-
-
-# @dataclass
-# class NoStrategy(DataStrategy):
-#     def validate(
-#         self, times: np.ndarray, data: np.ndarray
-#     ) -> Tuple[np.ndarray, np.ndarray]:
-#         return times, data
-
-#     def format(self, times: np.ndarray, data: np.ndarray) -> List[str]:
-#         data = []
-#         for time, row in zip(times, data):
-#             row_text = " ".join([str(value) for value in row])
-#             line = f"{time} {row_text}"
-#             data.append(line)
-#         return data
-
-
-# @dataclass
-# class QuaternionStrategy(DataStrategy):
-#     tolerance: float = 1e-6
-
-#     def format(self, times: np.ndarray, data: np.ndarray) -> List[str]:
-#         ...
-
-#     def validate(
-#         self, times: np.ndarray, data: np.ndarray
-#     ) -> Tuple[np.ndarray, np.ndarray]:
-#         rss = np.sqrt(
-#             data[:, 0] ** 2 + data[:, 1] ** 2 + data[:, 2] ** 2 + data[:, 3] ** 2
-#         )
-#         valid_indices = np.abs(1 - rss) <= self.tolerance
-#         return times[valid_indices], data[valid_indices]
-
-
-# attitude_strategies = {
-#     "Quaternions": QuaternionStrategy(),
-#     "QuatScalarFirst": QuaternionStrategy(),
-# }
-
-
-def validate_time(dt: Any) -> Optional[np.datetime64]:
-    if dt is None:
-        return None
-    elif isinstance(dt, np.datetime64):
-        return dt
-    elif isinstance(dt, str):
-        return np.datetime64(dt)
-    elif isinstance(dt, datetime.datetime):
-        return np.datetime64(dt.isoformat(sep="T", timespec="milliseconds"))
-    msg = f"could not convert {type(dt)} to np.datetime64"
-    raise TypeError(msg)
-
-
-def validate_integer(value: Any) -> int:
-    if value is None:
-        return None
-    return int(value)
-
-
-def validate_choice(value: str, choice_class: Type) -> Optional[str]:
-    if value is None:
-        return None
-
-    choices = {c.lower(): c for c in typing.get_args(choice_class)}
-    try:
-        return choices[value.lower()]
-    except KeyError:
-        msg = f"{value!r} was not a valid choice; valid choices: {', '.join(choices.values())}"
-        raise ValueError(msg)
-
-
-def no_validation(time: np.ndarray, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    time = np.atleast_1d(time)
-    data = np.atleast_2d(data)
-    return time, data
-
-
-def validate_quaternion(
-    time: np.ndarray, data: np.ndarray, tolerance: float = 1e-6
-) -> Tuple[np.ndarray, np.ndarray]:
-    time = np.atleast_1d(time)
-    data = np.atleast_2d(data)
-    rss = np.sqrt(data[:, 0] ** 2 + data[:, 1] ** 2 + data[:, 2] ** 2 + data[:, 3] ** 2)
-    valid = np.abs(rss - 1) <= tolerance
-    return time[valid], data[valid, :]
-
-
-def validate_angles(
-    time: np.ndarray,
-    data: np.ndarray,
-    min_angle: float = -180,
-    max_angle: float = 360,
-) -> Tuple[np.ndarray, np.ndarray]:
-    time = np.atleast_1d(time)
-    data = np.atleast_2d(data)
-
-    for i in range(3):
-        valid = min_angle <= data[i] and data[0] <= max_angle
-        time = time[valid]
-        data = data[valid, :]
-    return time, data
-
-
-def format_iso_ymd(time: Union[datetime.datetime, np.datetime64]) -> str:
-    if isinstance(time, datetime.datetime):
-        time = np.datetime64(time.isoformat(timespec="milliseconds"))
-    return str(time)[0:23]
-
-
-def format_ep_sec(
-    time: Union[datetime.datetime, np.datetime64], *, epoch: np.datetime64
-) -> str:
-    if isinstance(time, datetime.datetime):
-        time = np.datetime64(time.isoformat(timespec="milliseconds"))
-    dt = (time - epoch) / np.timedelta64(1, "ns") / 1_000_000_000
-    return f"{dt:15.3f}"
-
-
-def format_data(row: np.ndarray) -> str:
-    return f'{" ".join([f"{value:12f}" for value in row])}'
-
-
-def format_quaternions(row: np.ndarray) -> str:
-    return f"{row[0]:+12.9f} {row[1]:+12.9f} {row[2]:+12.9f} {row[3]:+12.9f}"
-
 
 class StkFileBase(abc.ABC):
     __version__: str = "stk.v.11.0"
@@ -202,14 +62,14 @@ class StkFileBase(abc.ABC):
     ) -> None:
         self.stream = stream
 
-        self.message_level = validate_choice(message_level, MessageLevel)
-        self.time_format = validate_choice(time_format, TimeFormat)
-        self.scenario_epoch = validate_time(scenario_epoch)
+        self.message_level = validators.choice(message_level, MessageLevel)
+        self.time_format = validators.choice(time_format, TimeFormat)
+        self.scenario_epoch = validators.time(scenario_epoch)
 
         if self.time_format == "ISO-YMD":
-            self.format_time = format_iso_ymd
+            self.format_time = formatters.iso_ymd
         elif self.time_format == "EpSec":
-            self.format_time = format_ep_sec
+            self.format_time = formatters.ep_sec
         else:
             msg = f"time_format={self.time_format!r} is not supported"
             raise NotImplementedError(msg)
@@ -279,25 +139,26 @@ class AttitudeFile(StkFileBase):
             time_format=time_format,
             scenario_epoch=scenario_epoch,
         )
-        self.format = validate_choice(format, AttitudeFileFormat)
-        self.central_body = validate_choice(central_body, CentralBody)
-        self.coordinate_axes = validate_choice(coordinate_axes, CoordinateAxes)
-        self.coordinate_axes_epoch = validate_time(coordinate_axes_epoch)
-        self.interpolation_method = validate_choice(
+        self.format = validators.choice(format, AttitudeFileFormat)
+        self.central_body = validators.choice(central_body, CentralBody)
+        self.coordinate_axes = validators.choice(coordinate_axes, CoordinateAxes)
+        self.coordinate_axes_epoch = validators.time(coordinate_axes_epoch)
+        self.interpolation_method = validators.choice(
             interpolation_method, InterpolationMethod
         )
-        self.interpolation_order = validate_integer(interpolation_order)
-        self.sequence = validate_choice(sequence, RotationSequence)
+        self.interpolation_order = validators.integer(interpolation_order)
+        self.sequence = validators.choice(sequence, RotationSequence)
 
         self._validate_coord_axes_with_epoch()
 
-        self.validate_data = no_validation
-        self.format_data = format_data
+        self.validate_data = validators.none
+
+        self.format_data = formatters.generic
         if self.format in QUATERNION_FORMATS:
-            self.validate_data = validate_quaternion
-            self.format_data = format_quaternions
+            self.validate_data = validators.quaternion
+            self.format_data = formatters.quaternions
         elif self.format in ANGLE_FORMATS:
-            self.validate_data = validate_angles
+            self.validate_data = validators.angles
 
     def _validate_coord_axes_with_epoch(self) -> None:
         epoch_required = [
