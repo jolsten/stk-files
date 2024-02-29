@@ -62,7 +62,7 @@ def angles(
     data = np.atleast_2d(data)
 
     for i in range(3):
-        valid = min_angle <= data[i] and data[0] <= max_angle
+        valid = min_angle <= data[:, i] and data[:, i] <= max_angle
         time = time[valid]
         data = data[valid, :]
     return time, data
