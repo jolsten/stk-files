@@ -1,7 +1,9 @@
 import abc
 import datetime
 import io
-from typing import List, Literal, Optional, Union
+import itertools
+import typing
+from typing import Iterable, List, Literal, Optional, Union
 
 import numpy as np
 
@@ -29,10 +31,10 @@ AttitudeFileFormat = Literal[
     # "AngVels",
     "EulerAngles",
     # "EulerAngleRates",
-    "EulerAnglesAndRates",
+    # "EulerAnglesAndRates",
     "YPRAngles",
     # "YPRAngleRates",
-    "YPRAnglesAndRates",
+    # "YPRAnglesAndRates",
     "DCM",
     # "DCMAngVels",
     "ECFVector",
@@ -43,12 +45,15 @@ AttitudeFileFormat = Literal[
 EPOCH_TIME_FORMATS = ["EpSec"]
 QUATERNION_FORMATS = ["Quaternions", "QuatScalarFirst"]
 ANGLE_FORMATS = ["EulerAngles", "YPRAngles"]
+EULER_SEQUENCES = typing.get_args(EulerRotationSequence)
+YPR_SEQUENCES = typing.get_args(YPRRotationSequence)
 
 
 class StkFileBase(abc.ABC):
     __version__: str = "stk.v.11.0"
     __name__: str = ...
 
+    format: str = ...
     format_data: callable
     validate_data: callable
 
@@ -114,6 +119,12 @@ class StkFileBase(abc.ABC):
         for line in self.make_footer():
             print(line, file=self.stream)
 
+    def write(self, time: np.ndarray, data: np.ndarray) -> None:
+        """Write a complete set of data to a file."""
+        self.write_header()
+        self.write_data(time, data)
+        self.write_footer()
+
 
 class AttitudeFile(StkFileBase):
     __name__ = "Attitude"
@@ -150,15 +161,16 @@ class AttitudeFile(StkFileBase):
         self.sequence = validators.choice(sequence, RotationSequence)
 
         self._validate_coord_axes_with_epoch()
+        self._validate_angles_with_sequence()
 
-        self.validate_data = validators.none
+        self.validator = validators.none
 
-        self.format_data = formatters.generic
+        self.formatter = formatters.generic
         if self.format in QUATERNION_FORMATS:
-            self.validate_data = validators.quaternion
-            self.format_data = formatters.quaternions
+            self.validator = validators.quaternion
+            self.formatter = formatters.quaternions
         elif self.format in ANGLE_FORMATS:
-            self.validate_data = validators.angles
+            self.validator = validators.angles
 
     def _validate_coord_axes_with_epoch(self) -> None:
         epoch_required = [
@@ -170,6 +182,21 @@ class AttitudeFile(StkFileBase):
         if self.coordinate_axes in epoch_required and self.coordinate_axes is None:
             msg = f"coordinate_axes={self.coordinate_axes!r} requires a coordinate_axes_epoch value"
             raise ValueError(msg)
+
+    def _validate_angles_with_sequence(self) -> None:
+        """Ensure the Sequence keyword is provided if format requires it."""
+        if self.format in ANGLE_FORMATS:
+            if self.sequence is None:
+                msg = f"format={self.format} requires a sequence value"
+                raise ValueError(msg)
+
+            if self.format == "YPRAngles" and self.sequence not in YPR_SEQUENCES:
+                msg = f"sequence={self.sequence} not valid for format={self.format}"
+                raise ValueError(msg)
+
+            if self.format == "EulerAngles" and self.sequence not in EULER_SEQUENCES:
+                msg = f"sequence={self.sequence} not valid for format={self.format}"
+                raise ValueError(msg)
 
     def make_header(self) -> List[str]:
         hdr = []
@@ -196,7 +223,56 @@ class AttitudeFile(StkFileBase):
         time = np.atleast_1d(time)
         data = np.atleast_2d(data)
 
-        time, data = self.validate_data(time, data)
+        time, data = self.validator(time, data)
 
         for t, row in zip(time, data):
-            print(self.format_time(t), self.format_data(row), file=self.stream)
+            print(self.format_time(t), self.formatter(row), file=self.stream)
+
+
+class IntervalFile(StkFileBase):
+    __version__: str = "stk.v.10.0"
+    __name__: str = "IntervalList"
+
+    def __init__(
+        self,
+        stream: io.TextIOBase,
+        *,
+        message_level: Optional[MessageLevel] = None,
+        scenario_epoch: Optional[DateTime] = None,
+    ) -> None:
+        super().__init__(
+            stream,
+            message_level=message_level,
+            scenario_epoch=scenario_epoch,
+        )
+
+        self.validator = validators.none
+
+    def make_header(self) -> List[str]:
+        hdr = super().make_header()
+        hdr.append("BEGIN IntervalList")
+        hdr.append("DateUnitAbrv ISO-YMD")
+
+    def make_footer(self) -> List[str]:
+        ftr = ["END IntervalList"]
+        return ftr
+
+    def write_data(
+        self, start: np.ndarray, stop: np.ndarray, data: Optional[Iterable[str]] = None
+    ) -> List[str]:
+        if data is None:
+            data = itertools.cycle([""])
+
+        print("BEGIN Intervals", file=self.stream)
+        for t0, t1, s in zip(start, stop, data):
+            t0 = formatters.iso_ymd(t0)
+            t1 = formatters.iso_ymd(t1)
+            print(f'"{t0}"', f'"{t1}"', s, file=self.stream)
+        print("END Intervals", file=self.stream)
+
+    def write(
+        self, start: np.ndarray, stop: np.ndarray, data: Optional[Iterable[str]] = None
+    ) -> None:
+        self.write_header()
+        self.write_data(start, stop, data)
+        self.write_footer()

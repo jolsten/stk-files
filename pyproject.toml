@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2", "wheel"]
+requires = ["setuptools>=45", "setuptools_scm>=8.0", "wheel"]
 
 [project]
 name = "stkfiles"
@@ -40,6 +40,7 @@ dev = [
 include = ["stkfiles"]
 
 [tool.setuptools_scm]
+version_file = "stkfiles/_version.py"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
