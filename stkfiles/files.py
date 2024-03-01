@@ -47,6 +47,12 @@ QUATERNION_FORMATS = ["Quaternions", "QuatScalarFirst"]
 ANGLE_FORMATS = ["EulerAngles", "YPRAngles"]
 EULER_SEQUENCES = typing.get_args(EulerRotationSequence)
 YPR_SEQUENCES = typing.get_args(YPRRotationSequence)
+COORD_AXES_REQUIRE_EPOCH = [
+    "MeanOfEpoch",
+    "TrueOfEpoch",
+    "TEMEOfEpoch",
+    "AlignmentAtEpoch",
+]
 
 
 class StkFileBase(abc.ABC):
@@ -173,13 +179,10 @@ class AttitudeFile(StkFileBase):
             self.validator = validators.angles
 
     def _validate_coord_axes_with_epoch(self) -> None:
-        epoch_required = [
-            "MeanOfEpoch",
-            "TrueOfEpoch",
-            "TEMEOfEpoch",
-            "AlignmentAtEpoch",
-        ]
-        if self.coordinate_axes in epoch_required and self.coordinate_axes is None:
+        if (
+            self.coordinate_axes in COORD_AXES_REQUIRE_EPOCH
+            and self.coordinate_axes_epoch is None
+        ):
             msg = f"coordinate_axes={self.coordinate_axes!r} requires a coordinate_axes_epoch value"
             raise ValueError(msg)
 
