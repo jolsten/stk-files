@@ -33,13 +33,24 @@ COORD_AXES_REQUIRE_EPOCH = [
 ]
 
 
+def _ensure_shapes_match(*args: np.ndarray) -> None:
+    expected_shape = None
+    for idx, shape in enumerate([a.shape for a in args]):
+        if expected_shape is None:
+            expected_shape = shape
+        else:
+            if shape != expected_shape:
+                msg = f"ndarray {idx} with shape {shape} does not match expected shape {shape}"
+                raise ValueError(msg)
+
+
 class StkFileBase(abc.ABC):
     __version__: str = "stk.v.11.0"
     __name__: str = ...
 
     format: str = ...
-    format_data: callable
-    validate_data: callable
+    formatter: callable
+    validator: callable
 
     def __init__(
         self,
@@ -49,6 +60,31 @@ class StkFileBase(abc.ABC):
         time_format: Optional[TimeFormat] = "ISO-YMD",
         scenario_epoch: Optional[DateTime] = None,
     ) -> None:
+        """Initialize the STK File base class.
+
+        Implements much of the functionality needed for writing STK data files. This implementation allows
+        both batched and streaming file writing to be handled by the same class.
+
+        Args:
+            stream:
+                The stream on which to write the file contents.
+                e.g. a file handle or io.StringIO()
+            message_level:
+                The verbosity level of STK as it relates to reading the file.
+                Options are: Errors, Warnings, Verbose
+            time_format:
+                The format of the times to be used in the file. Options are:
+                - ISO-YMD: ISO-8601 DateTime, i.e. YYYY-MM-DDTHH:MM:SS.sss
+                - EpSec: Seconds since the scenario epoch
+            scenario_epoch:
+                The epoch time referenced by the STK file. time_format="EpSec" requires a ScenarioEpoch be provide.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: An argument was invalid.
+        """
         self.stream = stream
 
         self.message_level = validators.choice(message_level, MessageLevel)
@@ -76,7 +112,24 @@ class StkFileBase(abc.ABC):
             msg = f"scenario_epoch argument is not applicable for time_format={self.time_format!r}"
             raise ValueError(msg)
 
-    def make_header(self) -> List[str]:
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(stream={self.stream})"
+
+    def _make_header(self) -> List[str]:
+        """Assemble the STK file header.
+
+        Returns:
+            A list of strings containing the necessary file header lines.
+
+            [
+                "stk.v.11.0",
+                "BEGIN Attitude",
+                "<Keyword1> <Value1>",
+                ...
+                "<KeywordN> <ValueN>",
+                "AttitudeTimeQuaternions",
+            ]
+        """
         hdr = [self.__version__, f"BEGIN {self.__name__}"]
         if self.message_level:
             hdr.append(f"MessageLevel        {self.message_level}")
@@ -86,25 +139,61 @@ class StkFileBase(abc.ABC):
             hdr.append(f"ScenarioEpoch       {self.format_time(self.scenario_epoch)}")
         return hdr
 
-    def make_footer(self) -> List[str]:
+    def _make_footer(self) -> List[str]:
+        """Assemble the STK file footer.
+
+        Returns:
+            A list of strings containing the necessary file footer lines.
+
+            [
+                "END Attitude",
+            ]
+        """
         return [f"END {self.__name__}"]
 
     def write_header(self) -> None:
-        """Write to the stream"""
-        for line in self.make_header():
+        """Write the header to the stream."""
+        for line in self._make_header():
             print(line, file=self.stream)
 
-    @abc.abstractmethod
     def write_data(self, time: np.ndarray, data: np.ndarray) -> None:
-        ...
+        """Validate, format and write data to the stream.
+
+        Args:
+            time:
+                A numpy.ndarray[datetime64] containing the times for each row of data.
+            data:
+                A numpy.ndarray containing the rows of data to write to the STK Data File.
+
+        Returns:
+            None
+        """
+        _ensure_shapes_match(time, data)
+        time = np.atleast_1d(time)
+        data = np.atleast_2d(data)
+
+        time, data = self.validator(time, data)
+
+        for t, row in zip(time, data):
+            print(self.format_time(t), self.formatter(row), file=self.stream)
 
     def write_footer(self) -> None:
-        """Write to the stream"""
-        for line in self.make_footer():
+        """Write the footer to the stream."""
+        for line in self._make_footer():
             print(line, file=self.stream)
 
     def write(self, time: np.ndarray, data: np.ndarray) -> None:
-        """Write a complete set of data to a file."""
+        """Write a complete STK Data File given a a complete set of input data.
+
+        Args:
+            time:
+                A numpy.ndarray[datetime64] containing the times for each row of data.
+            data:
+                A numpy.ndarray containing the rows of data to write to the STK Data File.
+
+        Returns:
+            None
+        """
         self.write_header()
         self.write_data(time, data)
         self.write_footer()
@@ -128,6 +217,55 @@ class AttitudeFile(StkFileBase):
         interpolation_order: Optional[int] = None,
         sequence: Optional[RotationSequence] = None,
     ) -> None:
+        """Initializes the STK Attitude (.a) File writer.
+
+        Args:
+            stream:
+                The stream on which to write the file contents.
+                e.g. a file handle or io.StringIO()
+            format:
+                The format of the attitude data being used. Options include:
+                - Quaternions
+                - QuatScalarFirst
+                - EulerAngles
+                - YPRAngles
+            sequence:
+                The rotation sequence for the attitude data.
+                Required if format is "EulerAngles" or "YPRAngles".
+            message_level:
+                The verbosity level of STK as it relates to reading the file.
+                Options are: Errors, Warnings, Verbose
+            time_format:
+                The format of the times to be used in the file. Options are:
+                - ISO-YMD: ISO-8601 DateTime, i.e. YYYY-MM-DDTHH:MM:SS.sss
+                - EpSec: Seconds since the scenario epoch
+            scenario_epoch:
+                The epoch time referenced by the STK file. time_format="EpSec" requires a ScenarioEpoch be provide.
+            central_body:
+                The central body.
+            coordinate_axes:
+                The coordinate axes for the data. Default is "ICRF". Options include:
+                - Fixed: The standard Greenwich-referenced ECF frame.
+                - ICRF: The International Celestial Reference Frame
+                - J2000: The same as ICRF (maybe?)
+                - Inertial
+                - TrueOfDate
+                - MeanOfDate
+                - TEMEOfDate
+            coordinate_axes_epoch:
+                The epoch (datetime) to use as the epoch for the associated reference frame.
+                Required `if coordinate_axes in ["TrueOfDate", "MeanOfDate", "TEMEOfDate"]`
+            interpolation_method:
+                The interpolation method used by STK. Options are "Lagrange" or "Hermite".
+            interpolation_order:
+                The order of the interpolation method used.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: An argument was invalid.
+        """
         super().__init__(
             stream,
             message_level=message_level,
@@ -157,6 +295,11 @@ class AttitudeFile(StkFileBase):
             self.validator = validators.angles
 
     def _validate_coord_axes_with_epoch(self) -> None:
+        """Ensure the CoordinateAxesEpoch keyword is provided when CoordinateAxes requires it.
+
+        Raises:
+            ValueError: The CoordinateAxesEpoch is required but was not provided.
+        """
         if (
             self.coordinate_axes in COORD_AXES_REQUIRE_EPOCH
             and self.coordinate_axes_epoch is None
@@ -165,7 +308,11 @@ class AttitudeFile(StkFileBase):
             raise ValueError(msg)
 
     def _validate_angles_with_sequence(self) -> None:
-        """Ensure the Sequence keyword is provided if format requires it."""
+        """Ensure the Sequence keyword is provided if format requires it.
+
+        Raises:
+            ValueError: The CoordinateAxesEpoch is required but was not provided.
+        """
         if self.format in ANGLE_FORMATS:
             if self.sequence is None:
                 msg = f"format={self.format} requires a sequence value"
@@ -179,9 +326,12 @@ class AttitudeFile(StkFileBase):
                 msg = f"sequence={self.sequence} not valid for format={self.format}"
                 raise ValueError(msg)
 
-    def make_header(self) -> List[str]:
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(stream={self.stream}, format={self.format})"
+
+    def _make_header(self) -> List[str]:
         hdr = []
-        hdr.extend(super().make_header())
+        hdr.extend(super()._make_header())
         if self.central_body:
             hdr.append(f"CentralBody         {self.central_body}")
         if self.coordinate_axes:
@@ -200,15 +350,6 @@ class AttitudeFile(StkFileBase):
         hdr.append(f"AttitudeTime{self.format}")
         return hdr
 
-    def write_data(self, time: np.ndarray, data: np.ndarray) -> None:
-        time = np.atleast_1d(time)
-        data = np.atleast_2d(data)
-
-        time, data = self.validator(time, data)
-
-        for t, row in zip(time, data):
-            print(self.format_time(t), self.formatter(row), file=self.stream)
-
 
 class IntervalFile(StkFileBase):
     __version__: str = "stk.v.10.0"
@@ -221,6 +362,14 @@ class IntervalFile(StkFileBase):
         message_level: Optional[MessageLevel] = None,
         scenario_epoch: Optional[DateTime] = None,
     ) -> None:
+        """Initializes the STK Interval (.int) File writer.
+
+        Args:
+            stream:
+            message_level:
+            scenario_epoch:
+
+        """
         super().__init__(
             stream,
             message_level=message_level,
@@ -229,20 +378,36 @@ class IntervalFile(StkFileBase):
 
         self.validator = validators.none
 
-    def make_header(self) -> List[str]:
-        hdr = super().make_header()
+    def _make_header(self) -> List[str]:
+        hdr = super()._make_header()
         hdr.append("BEGIN IntervalList")
         hdr.append("DateUnitAbrv ISO-YMD")
 
-    def make_footer(self) -> List[str]:
+    def _make_footer(self) -> List[str]:
         ftr = ["END IntervalList"]
         return ftr
 
     def write_data(
         self, start: np.ndarray, stop: np.ndarray, data: Optional[Iterable[str]] = None
     ) -> List[str]:
+        """Validate, format and write data to the stream.
+
+        Args:
+            start:
+                A numpy.ndarray[datetime64] containing the start times for each interval.
+            stop:
+                A numpy.ndarray[datetime64] containing the stop times for each interval.
+            data:
+                An optional numpy.ndarray[string] containing any desired Data values for the associated interval.
+
+        Returns:
+            None
+        """
         if data is None:
             data = itertools.cycle([""])
+            _ensure_shapes_match(start, stop)
+        else:
+            _ensure_shapes_match(start, stop, data)
 
         print("BEGIN Intervals", file=self.stream)
         for t0, t1, s in zip(start, stop, data):
@@ -254,6 +419,19 @@ class IntervalFile(StkFileBase):
     def write(
         self, start: np.ndarray, stop: np.ndarray, data: Optional[Iterable[str]] = None
     ) -> None:
+        """Write a complete STK Data File given a a complete set of input data.
+
+        Args:
+            start:
+                A numpy.ndarray[datetime64] containing the start times for each interval.
+            stop:
+                A numpy.ndarray[datetime64] containing the stop times for each interval.
+            data:
+                An optional numpy.ndarray[string] containing any desired Data values for the associated interval.
+
+        Returns:
+            None
+        """
         self.write_header()
         self.write_data(start, stop, data)
         self.write_footer()

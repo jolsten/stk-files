@@ -1,0 +1,7 @@
+site_name: STK Files
+
+theme:
+  name: "readthedocs"
+
+plugins:
+- mkdocstrings
