@@ -31,6 +31,8 @@ dev = [
   "build",
   "setuptools>=45",
   "setuptools_scm[toml]>=6.2",
+  "mkdocs",
+  "mkdocstrings",
   "wheel",
   "pytest",
   "pytest-cov",
