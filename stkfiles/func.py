@@ -19,10 +19,18 @@ def attitude_file(
     coordinate_axes: CoordinateAxes = "ICRF",
     sequence: Optional[RotationSequence] = None,
 ) -> None:
+    """Create an STK Attitude (.a) File
+
+    Args
+    ====
+    filename: PathLike
+    format:
+
+    """
     with open(filename, "w") as file:
         a = AttitudeFile(
             file,
-            format,
+            format=format,
             coordinate_axes=coordinate_axes,
             sequence=sequence,
         )
