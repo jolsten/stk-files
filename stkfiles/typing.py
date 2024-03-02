@@ -1,7 +1,11 @@
 import datetime
+import os
+import pathlib
 from typing import Literal, Union
 
 import numpy as np
+
+PathLike = Union[str, pathlib.Path, os.PathLike]
 
 MessageLevel = Literal["Errors", "Warnings", "Verbose"]
 TimeFormat = Literal["ISO-YMD", "EpSec"]
