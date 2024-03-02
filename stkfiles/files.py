@@ -1,46 +1,24 @@
 import abc
-import datetime
 import io
 import itertools
 import typing
-from typing import Iterable, List, Literal, Optional, Union
+from typing import Iterable, List, Optional
 
 import numpy as np
 
 from stkfiles import formatters, validators
-from stkfiles.typing import MessageLevel, TimeFormat
-
-# from stkfiles.utils import format_time, root_sum_square
-
-CentralBody = Literal["Earth", "Moon"]
-CoordinateAxes = Literal[
-    "Fixed", "J2000", "ICRF", "Inertial", "TrueOfDate", "MeanOfDate", "TEMEOfDate"
-]
-DateTime = datetime.datetime
-InterpolationMethod = Literal["Lagrange", "Hermite"]
-EulerRotationSequence = Literal[
-    121, 123, 131, 132, 212, 213, 231, 232, 312, 313, 321, 323
-]
-YPRRotationSequence = Literal[123, 132, 213, 231, 312, 321]
-RotationSequence = Union[EulerRotationSequence, YPRRotationSequence]
-
-AttitudeFileFormat = Literal[
-    "Quaternions",
-    "QuatScalarFirst",
-    # "QuatAngVels",
-    # "AngVels",
-    "EulerAngles",
-    # "EulerAngleRates",
-    # "EulerAnglesAndRates",
-    "YPRAngles",
-    # "YPRAngleRates",
-    # "YPRAnglesAndRates",
-    "DCM",
-    # "DCMAngVels",
-    "ECFVector",
-    "ECIVector",
-]
-
+from stkfiles.typing import (
+    AttitudeFileFormat,
+    CentralBody,
+    CoordinateAxes,
+    DateTime,
+    EulerRotationSequence,
+    InterpolationMethod,
+    MessageLevel,
+    RotationSequence,
+    TimeFormat,
+    YPRRotationSequence,
+)
 
 EPOCH_TIME_FORMATS = ["EpSec"]
 QUATERNION_FORMATS = ["Quaternions", "QuatScalarFirst"]
