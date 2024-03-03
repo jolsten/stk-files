@@ -27,6 +27,9 @@ classifiers = [
 repository = "https://github.com/jolsten/stkfiles"
 
 [project.optional-dependencies]
+cli = [
+  "python-dateutil",
+]
 dev = [
   "build",
   "setuptools>=45",
@@ -38,6 +41,7 @@ dev = [
   "mkdocstrings",
   "pytest",
   "pytest-cov",
+  "python-dateutil",
 ]
 
 [tool.setuptools.packages.find]

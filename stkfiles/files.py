@@ -34,13 +34,13 @@ COORD_AXES_REQUIRE_EPOCH = [
 
 
 def _ensure_shapes_match(*args: np.ndarray) -> None:
-    expected_shape = None
+    expected_rows = None
     for idx, shape in enumerate([a.shape for a in args]):
-        if expected_shape is None:
-            expected_shape = shape
+        if expected_rows is None:
+            expected_rows = shape[0]
         else:
-            if shape != expected_shape:
-                msg = f"ndarray {idx} with shape {shape} does not match expected shape {shape}"
+            if shape[0] != expected_rows:
+                msg = f"ndarray {idx} with shape {shape} does not match expected row count {expected_rows}"
                 raise ValueError(msg)
 
 
@@ -101,6 +101,13 @@ class StkFileBase(abc.ABC):
 
         # Do more complicated argument validation here
         self._validate_time_format_with_epoch()
+
+    def __enter__(self) -> "StkFileBase":
+        self.write_header()
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_tb) -> None:
+        self.write_footer()
 
     def _validate_time_format_with_epoch(self) -> None:
         """Ensure the ScenarioEpoch keyword is provided only when the TimeFormat requires it."""
@@ -168,9 +175,9 @@ class StkFileBase(abc.ABC):
         Returns:
             None
         """
-        _ensure_shapes_match(time, data)
         time = np.atleast_1d(time)
         data = np.atleast_2d(data)
+        _ensure_shapes_match(time, data)
 
         time, data = self.validator(time, data)
 
