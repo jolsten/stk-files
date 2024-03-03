@@ -2,6 +2,7 @@ import abc
 import io
 import itertools
 import typing
+from mailbox import Message
 from typing import Iterable, List, Optional
 
 import numpy as np
@@ -205,6 +206,19 @@ class StkFileBase(abc.ABC):
         self.write_data(time, data)
         self.write_footer()
 
+    def _validate_coord_axes_with_epoch(self) -> None:
+        """Ensure the CoordinateAxesEpoch keyword is provided when CoordinateAxes requires it.
+
+        Raises:
+            ValueError: The CoordinateAxesEpoch is required but was not provided.
+        """
+        if (
+            self.coordinate_axes in COORD_AXES_REQUIRE_EPOCH
+            and self.coordinate_axes_epoch is None
+        ):
+            msg = f"coordinate_axes={self.coordinate_axes!r} requires a coordinate_axes_epoch value"
+            raise ValueError(msg)
+
 
 class AttitudeFile(StkFileBase):
     __name__ = "Attitude"
@@ -356,6 +370,100 @@ class AttitudeFile(StkFileBase):
 
         hdr.append(f"AttitudeTime{self.format}")
         return hdr
+
+
+class EphemerisFile(StkFileBase):
+    __version__: str = "stk.v.12.0"
+    __name__: str = "Ephemeris"
+
+    def __init__(
+        self,
+        stream: io.TextIOBase,
+        *,
+        message_level: Optional[MessageLevel] = None,
+        time_format: Optional[TimeFormat] = "ISO-YMD",
+        scenario_epoch: Optional[DateTime] = None,
+        central_body: Optional[CentralBody] = None,
+        coordinate_axes: CoordinateAxes = "ICRF",
+        coordinate_axes_epoch: Optional[DateTime] = None,
+        interpolation_method: Optional[InterpolationMethod] = None,
+        interpolation_order: Optional[int] = None,
+    ) -> None:
+        """Initializes the STK Attitude (.a) File writer.
+
+        Args:
+            stream:
+                The stream on which to write the file contents.
+                e.g. a file handle or io.StringIO()
+            format:
+                The format of the attitude data being used. Options include:
+                - Quaternions
+                - QuatScalarFirst
+                - EulerAngles
+                - YPRAngles
+            sequence:
+                The rotation sequence for the attitude data.
+                Required if format is "EulerAngles" or "YPRAngles".
+            message_level:
+                The verbosity level of STK as it relates to reading the file.
+                Options are: Errors, Warnings, Verbose
+            time_format:
+                The format of the times to be used in the file. Options are:
+                - ISO-YMD: ISO-8601 DateTime, i.e. YYYY-MM-DDTHH:MM:SS.sss
+                - EpSec: Seconds since the scenario epoch
+            scenario_epoch:
+                The epoch time referenced by the STK file. time_format="EpSec" requires a ScenarioEpoch be provide.
+            central_body:
+                The central body.
+            coordinate_axes:
+                The coordinate axes for the data. Default is "ICRF". Options include:
+                - Fixed: The standard Greenwich-referenced ECF frame.
+                - ICRF: The International Celestial Reference Frame
+                - J2000: The same as ICRF (maybe?)
+                - Inertial
+                - TrueOfDate
+                - MeanOfDate
+                - TEMEOfDate
+            coordinate_axes_epoch:
+                The epoch (datetime) to use as the epoch for the associated reference frame.
+                Required `if coordinate_axes in ["TrueOfDate", "MeanOfDate", "TEMEOfDate"]`
+            interpolation_method:
+                The interpolation method used by STK. Options are "Lagrange" or "Hermite".
+            interpolation_order:
+                The order of the interpolation method used.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: An argument was invalid.
+        """
+        super().__init__(
+            stream,
+            message_level=message_level,
+            time_format=time_format,
+            scenario_epoch=scenario_epoch,
+        )
+        self.format = validators.choice(format, AttitudeFileFormat)
+        self.central_body = validators.choice(central_body, CentralBody)
+        self.coordinate_axes = validators.choice(coordinate_axes, CoordinateAxes)
+        self.coordinate_axes_epoch = validators.time(coordinate_axes_epoch)
+        self.interpolation_method = validators.choice(
+            interpolation_method, InterpolationMethod
+        )
+        self.interpolation_order = validators.integer(interpolation_order)
+
+        self._validate_coord_axes_with_epoch()
+        self._validate_angles_with_sequence()
+
+        self.validator = validators.none
+
+        self.formatter = formatters.generic
+        if self.format in QUATERNION_FORMATS:
+            self.validator = validators.quaternion
+            self.formatter = formatters.quaternions
+        elif self.format in ANGLE_FORMATS:
+            self.validator = validators.angles
 
 
 class IntervalFile(StkFileBase):

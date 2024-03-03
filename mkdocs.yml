@@ -1,7 +1,20 @@
 site_name: STK Files
 
+nav:
+  - File Types:
+    - Attitude File: attitude.md
+    - Ephemeris File: ephemeris.md
+    - Interval File: interval.md
+  - API: api.md
+
 theme:
   name: "readthedocs"
 
 plugins:
 - mkdocstrings
+    default_handler: python
+    handlers:
+      python:
+        options:
+          show_source: false
+          show_root_heading: true
