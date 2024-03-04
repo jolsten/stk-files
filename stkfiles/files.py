@@ -2,8 +2,7 @@ import abc
 import io
 import itertools
 import typing
-from mailbox import Message
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Sequence
 
 import numpy as np
 
@@ -13,8 +12,10 @@ from stkfiles.typing import (
     CentralBody,
     CoordinateAxes,
     DateTime,
+    EphemerisFileFormat,
     EulerRotationSequence,
     InterpolationMethod,
+    IntervalList,
     MessageLevel,
     RotationSequence,
     TimeFormat,
@@ -379,6 +380,7 @@ class EphemerisFile(StkFileBase):
     def __init__(
         self,
         stream: io.TextIOBase,
+        format: EphemerisFileFormat,
         *,
         message_level: Optional[MessageLevel] = None,
         time_format: Optional[TimeFormat] = "ISO-YMD",
@@ -389,7 +391,7 @@ class EphemerisFile(StkFileBase):
         interpolation_method: Optional[InterpolationMethod] = None,
         interpolation_order: Optional[int] = None,
     ) -> None:
-        """Initializes the STK Attitude (.a) File writer.
+        """Initializes the STK Ephemeris (.e) File writer.
 
         Args:
             stream:
@@ -397,13 +399,10 @@ class EphemerisFile(StkFileBase):
                 e.g. a file handle or io.StringIO()
             format:
                 The format of the attitude data being used. Options include:
-                - Quaternions
-                - QuatScalarFirst
-                - EulerAngles
-                - YPRAngles
-            sequence:
-                The rotation sequence for the attitude data.
-                Required if format is "EulerAngles" or "YPRAngles".
+                - TimePos
+                - TimePosVel
+                - LLATimePos
+                - LLATimePosVel
             message_level:
                 The verbosity level of STK as it relates to reading the file.
                 Options are: Errors, Warnings, Verbose
@@ -444,7 +443,7 @@ class EphemerisFile(StkFileBase):
             time_format=time_format,
             scenario_epoch=scenario_epoch,
         )
-        self.format = validators.choice(format, AttitudeFileFormat)
+        self.format = validators.choice(format, EphemerisFileFormat)
         self.central_body = validators.choice(central_body, CentralBody)
         self.coordinate_axes = validators.choice(coordinate_axes, CoordinateAxes)
         self.coordinate_axes_epoch = validators.time(coordinate_axes_epoch)
@@ -454,16 +453,9 @@ class EphemerisFile(StkFileBase):
         self.interpolation_order = validators.integer(interpolation_order)
 
         self._validate_coord_axes_with_epoch()
-        self._validate_angles_with_sequence()
 
         self.validator = validators.none
-
         self.formatter = formatters.generic
-        if self.format in QUATERNION_FORMATS:
-            self.validator = validators.quaternion
-            self.formatter = formatters.quaternions
-        elif self.format in ANGLE_FORMATS:
-            self.validator = validators.angles
 
 
 class IntervalFile(StkFileBase):
@@ -495,15 +487,17 @@ class IntervalFile(StkFileBase):
 
     def _make_header(self) -> List[str]:
         hdr = super()._make_header()
-        hdr.append("BEGIN IntervalList")
+        # hdr.append("BEGIN IntervalList")
         hdr.append("DateUnitAbrv ISO-YMD")
 
     def _make_footer(self) -> List[str]:
-        ftr = ["END IntervalList"]
+        ftr = []
+        # ftr.append("END IntervalList")
         return ftr
 
     def write_data(
-        self, start: np.ndarray, stop: np.ndarray, data: Optional[Iterable[str]] = None
+        self,
+        intervals: IntervalList,
     ) -> List[str]:
         """Validate, format and write data to the stream.
 
@@ -518,21 +512,15 @@ class IntervalFile(StkFileBase):
         Returns:
             None
         """
-        if data is None:
-            data = itertools.cycle([""])
-            _ensure_shapes_match(start, stop)
-        else:
-            _ensure_shapes_match(start, stop, data)
-
-        print("BEGIN Intervals", file=self.stream)
-        for t0, t1, s in zip(start, stop, data):
+        for parts in intervals:
+            t0, t1, *data = parts
             t0 = formatters.iso_ymd(t0)
             t1 = formatters.iso_ymd(t1)
-            print(f'"{t0}"', f'"{t1}"', s, file=self.stream)
-        print("END Intervals", file=self.stream)
+            print(f'"{t0}"', f'"{t1}"', *data, file=self.stream)
 
     def write(
-        self, start: np.ndarray, stop: np.ndarray, data: Optional[Iterable[str]] = None
+        self,
+        intervals: IntervalList,
     ) -> None:
         """Write a complete STK Data File given a a complete set of input data.
 
@@ -548,5 +536,5 @@ class IntervalFile(StkFileBase):
             None
         """
         self.write_header()
-        self.write_data(start, stop, data)
+        self.write_data(intervals)
         self.write_footer()
