@@ -39,6 +39,7 @@ dev = [
   "wheel",
   "pytest",
   "pytest-cov",
+  "hypothesis",
   "python-dateutil",
 ]
 

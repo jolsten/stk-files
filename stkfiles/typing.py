@@ -1,7 +1,7 @@
 import datetime
 import os
 import pathlib
-from typing import Iterable, Literal, Sequence, Union
+from typing import Iterable, Literal, Tuple, Union
 
 import numpy as np
 from numpy.typing import NDArray
@@ -45,5 +45,5 @@ EphemerisFileFormat = Literal[
     "TimePos", "TimePosVel", "TimePosVelAcc", "LLATimePos", "LLATimePosVel"
 ]
 
-Interval = Union[Sequence[DateTime, DateTime], Sequence[DateTime, DateTime, str]]
+Interval = Union[Tuple[DateTime, DateTime], Tuple[DateTime, DateTime, str]]
 IntervalList = Iterable[Interval]

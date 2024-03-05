@@ -1,7 +1,6 @@
 from typing import Optional
 
 import numpy as np
-from numpy.typing import NDArray
 
 from stkfiles.files import AttitudeFile, EphemerisFile, IntervalFile
 from stkfiles.typing import (
@@ -40,7 +39,7 @@ def attitude_file(
             coordinate_axes_epoch=axes_epoch,
             sequence=sequence,
         )
-        a.write(time, data)
+        a.write_complete(time, data)
 
 
 def ephemeris_file(
@@ -68,7 +67,7 @@ def ephemeris_file(
             coordinate_axes=axes,
             coordinate_axes_epoch=axes_epoch,
         )
-        e.write(time, data)
+        e.write_complete(time, data)
 
 
 def interval_file(
@@ -86,4 +85,4 @@ def interval_file(
     """
     with open(filename, "w") as file:
         i = IntervalFile(file)
-        i.write(intervals)
+        i.write_complete(intervals)

@@ -165,7 +165,7 @@ class StkFileBase(abc.ABC):
         for line in self._make_header():
             print(line, file=self.stream)
 
-    def write_data(self, time: np.ndarray, data: np.ndarray) -> None:
+    def write_batch(self, time: np.ndarray, data: np.ndarray) -> None:
         """Validate, format and write data to the stream.
 
         Args:
@@ -191,7 +191,7 @@ class StkFileBase(abc.ABC):
         for line in self._make_footer():
             print(line, file=self.stream)
 
-    def write(self, time: np.ndarray, data: np.ndarray) -> None:
+    def write_complete(self, time: np.ndarray, data: np.ndarray) -> None:
         """Write a complete STK Data File given a a complete set of input data.
 
         Args:
@@ -204,7 +204,7 @@ class StkFileBase(abc.ABC):
             None
         """
         self.write_header()
-        self.write_data(time, data)
+        self.write_batch(time, data)
         self.write_footer()
 
     def _validate_coord_axes_with_epoch(self) -> None:
@@ -495,19 +495,14 @@ class IntervalFile(StkFileBase):
         # ftr.append("END IntervalList")
         return ftr
 
-    def write_data(
+    def write_batch(
         self,
         intervals: IntervalList,
     ) -> List[str]:
         """Validate, format and write data to the stream.
 
         Args:
-            start:
-                A numpy.ndarray[datetime64] containing the start times for each interval.
-            stop:
-                A numpy.ndarray[datetime64] containing the stop times for each interval.
-            data:
-                An optional numpy.ndarray[string] containing any desired Data values for the associated interval.
+            intervals: An iterable containing start, stop time pairs with optionally additional elements for "data"
 
         Returns:
             None
@@ -518,23 +513,18 @@ class IntervalFile(StkFileBase):
             t1 = formatters.iso_ymd(t1)
             print(f'"{t0}"', f'"{t1}"', *data, file=self.stream)
 
-    def write(
+    def write_complete(
         self,
         intervals: IntervalList,
     ) -> None:
         """Write a complete STK Data File given a a complete set of input data.
 
         Args:
-            start:
-                A numpy.ndarray[datetime64] containing the start times for each interval.
-            stop:
-                A numpy.ndarray[datetime64] containing the stop times for each interval.
-            data:
-                An optional numpy.ndarray[string] containing any desired Data values for the associated interval.
+            intervals: An iterable containing start, stop time pairs with optionally additional elements for "data"
 
         Returns:
             None
         """
         self.write_header()
-        self.write_data(intervals)
+        self.write_batch(intervals)
         self.write_footer()
