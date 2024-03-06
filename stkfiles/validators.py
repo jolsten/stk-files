@@ -28,9 +28,9 @@ def choice(value: str, choice_class: Type) -> Optional[str]:
     if value is None:
         return None
 
-    choices = {c.lower(): c for c in typing.get_args(choice_class)}
+    choices = {str(c).lower(): c for c in typing.get_args(choice_class)}
     try:
-        return choices[value.lower()]
+        return choices[str(value).lower()]
     except KeyError:
         msg = f"{value!r} was not a valid choice; valid choices: {', '.join(choices.values())}"
         raise ValueError(msg)

@@ -2,11 +2,11 @@ import datetime
 import io
 
 import numpy as np
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
 from stkfiles.files import AttitudeFile
-from stkfiles.funcs import attitude_file
 
 from . import strategies as cst
 
@@ -45,3 +45,13 @@ def test_eulerangles(start, data):
     )
     a.write_complete(time, data)
     assert stream
+
+
+def test_sequence_missing():
+    sequence = None
+    stream = io.StringIO()
+    with pytest.raises(ValueError):
+        stream = io.StringIO()
+        a = AttitudeFile(
+            stream, format="EulerAngles", coordinate_axes="VVLH", sequence=sequence
+        )

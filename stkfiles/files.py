@@ -1,8 +1,7 @@
 import abc
 import io
-import itertools
 import typing
-from typing import Iterable, List, Optional, Sequence
+from typing import List, Optional
 
 import numpy as np
 
@@ -296,13 +295,16 @@ class AttitudeFile(StkFileBase):
         )
         self.format = validators.choice(format, AttitudeFileFormat)
         self.central_body = validators.choice(central_body, CentralBody)
-        self.coordinate_axes = validators.choice(coordinate_axes, CoordinateAxes)
+
+        # Don't validate coordinate axes to allow custom systems in the vector geometry tool
+        self.coordinate_axes = coordinate_axes
+
         self.coordinate_axes_epoch = validators.time(coordinate_axes_epoch)
         self.interpolation_method = validators.choice(
             interpolation_method, InterpolationMethod
         )
         self.interpolation_order = validators.integer(interpolation_order)
-        self.sequence = validators.choice(sequence, RotationSequence)
+        self.sequence = validators.choice(sequence, EulerRotationSequence)
 
         self._validate_coord_axes_with_epoch()
         self._validate_angles_with_sequence()
