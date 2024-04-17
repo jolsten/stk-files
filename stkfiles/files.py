@@ -387,10 +387,7 @@ class SensorPointingFile(AttitudeFile):
         time_format: Optional[TimeFormat] = "ISO-YMD",
         scenario_epoch: Optional[DateTime] = None,
         central_body: Optional[CentralBody] = None,
-        coordinate_axes: CoordinateAxes = "ICRF",
-        coordinate_axes_epoch: Optional[DateTime] = None,
-        interpolation_method: Optional[InterpolationMethod] = None,
-        interpolation_order: Optional[int] = None,
+        coordinate_axes: Optional[CoordinateAxes] = None,
         sequence: Optional[RotationSequence] = None,
     ) -> None:
         """Initializes the STK Attitude (.a) File writer.
@@ -405,6 +402,7 @@ class SensorPointingFile(AttitudeFile):
                 - QuatScalarFirst
                 - EulerAngles
                 - YPRAngles
+                - AzElAngles
             sequence:
                 The rotation sequence for the attitude data.
                 Required if format is "EulerAngles" or "YPRAngles".
@@ -428,13 +426,6 @@ class SensorPointingFile(AttitudeFile):
                 - TrueOfDate
                 - MeanOfDate
                 - TEMEOfDate
-            coordinate_axes_epoch:
-                The epoch (datetime) to use as the epoch for the associated reference frame.
-                Required `if coordinate_axes in ["TrueOfDate", "MeanOfDate", "TEMEOfDate"]`
-            interpolation_method:
-                The interpolation method used by STK. Options are "Lagrange" or "Hermite".
-            interpolation_order:
-                The order of the interpolation method used.
 
         Returns:
             None
@@ -454,11 +445,6 @@ class SensorPointingFile(AttitudeFile):
         # Don't validate coordinate axes to allow custom systems in the vector geometry tool
         self.coordinate_axes = coordinate_axes
 
-        self.coordinate_axes_epoch = validators.time(coordinate_axes_epoch)
-        self.interpolation_method = validators.choice(
-            interpolation_method, InterpolationMethod
-        )
-        self.interpolation_order = validators.integer(interpolation_order)
         self.sequence = validators.choice(sequence, EulerRotationSequence)
 
         self._validate_coord_axes_with_epoch()
@@ -473,41 +459,6 @@ class SensorPointingFile(AttitudeFile):
         elif self.format in ANGLE_FORMATS:
             self.validator = validators.angles
 
-    def _validate_coord_axes_with_epoch(self) -> None:
-        """Ensure the CoordinateAxesEpoch keyword is provided when CoordinateAxes requires it.
-
-        Raises:
-            ValueError: The CoordinateAxesEpoch is required but was not provided.
-        """
-        if (
-            self.coordinate_axes in COORD_AXES_REQUIRE_EPOCH
-            and self.coordinate_axes_epoch is None
-        ):
-            msg = f"coordinate_axes={self.coordinate_axes!r} requires a coordinate_axes_epoch value"
-            raise ValueError(msg)
-
-    def _validate_angles_with_sequence(self) -> None:
-        """Ensure the Sequence keyword is provided if format requires it.
-
-        Raises:
-            ValueError: The CoordinateAxesEpoch is required but was not provided.
-        """
-        if self.format in ANGLE_FORMATS:
-            if self.sequence is None:
-                msg = f"format={self.format} requires a sequence value"
-                raise ValueError(msg)
-
-            if self.format == "YPRAngles" and self.sequence not in YPR_SEQUENCES:
-                msg = f"sequence={self.sequence} not valid for format={self.format}"
-                raise ValueError(msg)
-
-            if self.format == "EulerAngles" and self.sequence not in EULER_SEQUENCES:
-                msg = f"sequence={self.sequence} not valid for format={self.format}"
-                raise ValueError(msg)
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(stream={self.stream}, format={self.format})"
-
     def _make_header(self) -> List[str]:
         hdr = []
         hdr.extend(super()._make_header())
@@ -515,14 +466,6 @@ class SensorPointingFile(AttitudeFile):
             hdr.append(f"CentralBody         {self.central_body}")
         if self.coordinate_axes:
             hdr.append(f"CoordinateAxes      {self.coordinate_axes}")
-        if self.coordinate_axes_epoch:
-            hdr.append(
-                f"CoordinateAxesEpoch {self.format_time(self.coordinate_axes_epoch)}"
-            )
-        if self.interpolation_method:
-            hdr.append(f"InterpolationMethod {self.interpolation_method}")
-        if self.interpolation_order:
-            hdr.append(f"InterpolationOrder  {self.interpolation_order}")
         if self.sequence:
             hdr.append(f"Sequence {self.sequence}")
 

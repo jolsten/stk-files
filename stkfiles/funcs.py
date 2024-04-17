@@ -2,7 +2,7 @@ from typing import Optional
 
 import numpy as np
 
-from stkfiles.files import AttitudeFile, EphemerisFile, IntervalFile
+from stkfiles.files import AttitudeFile, EphemerisFile, IntervalFile, SensorPointingFile
 from stkfiles.typing import (
     AttitudeFileFormat,
     CoordinateAxes,
@@ -47,6 +47,43 @@ def attitude_file(
             format=format,
             coordinate_axes=axes,
             coordinate_axes_epoch=axes_epoch,
+            sequence=sequence,
+        )
+        a.write_complete(time, data)
+
+
+def sensor_file(
+    filename: PathLike,
+    format: AttitudeFileFormat,
+    time: DateTimeArray,
+    data: np.ndarray,
+    axes: Optional[CoordinateAxes] = None,
+    sequence: Optional[RotationSequence] = None,
+) -> None:
+    """Create an STK Sensor Pointing (.sp) File
+
+    Args:
+        filename: Path to the output file.
+        format: Data format.
+
+            formats include:
+
+            - quaternions
+
+            - quatscalarfirst
+
+            - eulerangles
+
+            - yprangles
+
+            - azelangles
+
+    """
+    with open(filename, "w") as file:
+        a = SensorPointingFile(
+            file,
+            format=format,
+            coordinate_axes=axes,
             sequence=sequence,
         )
         a.write_complete(time, data)
