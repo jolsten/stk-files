@@ -1,12 +1,20 @@
 # API
 
-::: stkfiles.funcs.attitude_file
+::: stkfiles.files.StkFileBase
     handler: python
-
-
-## Classes
+    options:
+        show_root_heading: true
 
 ::: stkfiles.files.AttitudeFile
     handler: python
+    options:
+        show_root_heading: true
+
+::: stkfiles.files.EphemerisFile
+    handler: python
+    options:
+        show_root_heading: true
+
+::: stkfiles.files.IntervalFile
     options:
         show_root_heading: true

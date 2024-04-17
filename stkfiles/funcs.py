@@ -28,7 +28,17 @@ def attitude_file(
 
     Args:
         filename: Path to the output file.
-        format:
+        format: Data format.
+
+            formats include:
+
+            - quaternions
+
+            - quatscalarfirst
+
+            - eulerangles
+
+            - yprangles
 
     """
     with open(filename, "w") as file:
@@ -78,10 +88,15 @@ def interval_file(
 
     Args:
         filename: Path to the output file.
-        intervals: An iterable of intervals (start, stop, data)
-        start:
-        stop:
-        data:
+        intervals: An iterable of intervals.
+
+            The iterable must contain sequences, e.g.
+
+            - (start, stop) or
+
+            - (start, stop, data)
+
+            Where `start` and `stop` are `datetime.datetime` or `np.datetime64`, and data is a `str`.
     """
     with open(filename, "w") as file:
         i = IntervalFile(file)

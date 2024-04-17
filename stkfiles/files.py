@@ -375,6 +375,161 @@ class AttitudeFile(StkFileBase):
         return hdr
 
 
+class SensorPointingFile(AttitudeFile):
+    __name__ = "Attitude"
+
+    def __init__(
+        self,
+        stream: io.TextIOBase,
+        format: AttitudeFileFormat,
+        *,
+        message_level: Optional[MessageLevel] = None,
+        time_format: Optional[TimeFormat] = "ISO-YMD",
+        scenario_epoch: Optional[DateTime] = None,
+        central_body: Optional[CentralBody] = None,
+        coordinate_axes: CoordinateAxes = "ICRF",
+        coordinate_axes_epoch: Optional[DateTime] = None,
+        interpolation_method: Optional[InterpolationMethod] = None,
+        interpolation_order: Optional[int] = None,
+        sequence: Optional[RotationSequence] = None,
+    ) -> None:
+        """Initializes the STK Attitude (.a) File writer.
+
+        Args:
+            stream:
+                The stream on which to write the file contents.
+                e.g. a file handle or io.StringIO()
+            format:
+                The format of the attitude data being used. Options include:
+                - Quaternions
+                - QuatScalarFirst
+                - EulerAngles
+                - YPRAngles
+            sequence:
+                The rotation sequence for the attitude data.
+                Required if format is "EulerAngles" or "YPRAngles".
+            message_level:
+                The verbosity level of STK as it relates to reading the file.
+                Options are: Errors, Warnings, Verbose
+            time_format:
+                The format of the times to be used in the file. Options are:
+                - ISO-YMD: ISO-8601 DateTime, i.e. YYYY-MM-DDTHH:MM:SS.sss
+                - EpSec: Seconds since the scenario epoch
+            scenario_epoch:
+                The epoch time referenced by the STK file. time_format="EpSec" requires a ScenarioEpoch be provide.
+            central_body:
+                The central body.
+            coordinate_axes:
+                The coordinate axes for the data. Default is "ICRF". Options include:
+                - Fixed: The standard Greenwich-referenced ECF frame.
+                - ICRF: The International Celestial Reference Frame
+                - J2000: The same as ICRF (maybe?)
+                - Inertial
+                - TrueOfDate
+                - MeanOfDate
+                - TEMEOfDate
+            coordinate_axes_epoch:
+                The epoch (datetime) to use as the epoch for the associated reference frame.
+                Required `if coordinate_axes in ["TrueOfDate", "MeanOfDate", "TEMEOfDate"]`
+            interpolation_method:
+                The interpolation method used by STK. Options are "Lagrange" or "Hermite".
+            interpolation_order:
+                The order of the interpolation method used.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: An argument was invalid.
+        """
+        super().__init__(
+            stream,
+            message_level=message_level,
+            time_format=time_format,
+            scenario_epoch=scenario_epoch,
+        )
+        self.format = validators.choice(format, AttitudeFileFormat)
+        self.central_body = validators.choice(central_body, CentralBody)
+
+        # Don't validate coordinate axes to allow custom systems in the vector geometry tool
+        self.coordinate_axes = coordinate_axes
+
+        self.coordinate_axes_epoch = validators.time(coordinate_axes_epoch)
+        self.interpolation_method = validators.choice(
+            interpolation_method, InterpolationMethod
+        )
+        self.interpolation_order = validators.integer(interpolation_order)
+        self.sequence = validators.choice(sequence, EulerRotationSequence)
+
+        self._validate_coord_axes_with_epoch()
+        self._validate_angles_with_sequence()
+
+        self.validator = validators.none
+
+        self.formatter = formatters.generic
+        if self.format in QUATERNION_FORMATS:
+            self.validator = validators.quaternion
+            self.formatter = formatters.quaternions
+        elif self.format in ANGLE_FORMATS:
+            self.validator = validators.angles
+
+    def _validate_coord_axes_with_epoch(self) -> None:
+        """Ensure the CoordinateAxesEpoch keyword is provided when CoordinateAxes requires it.
+
+        Raises:
+            ValueError: The CoordinateAxesEpoch is required but was not provided.
+        """
+        if (
+            self.coordinate_axes in COORD_AXES_REQUIRE_EPOCH
+            and self.coordinate_axes_epoch is None
+        ):
+            msg = f"coordinate_axes={self.coordinate_axes!r} requires a coordinate_axes_epoch value"
+            raise ValueError(msg)
+
+    def _validate_angles_with_sequence(self) -> None:
+        """Ensure the Sequence keyword is provided if format requires it.
+
+        Raises:
+            ValueError: The CoordinateAxesEpoch is required but was not provided.
+        """
+        if self.format in ANGLE_FORMATS:
+            if self.sequence is None:
+                msg = f"format={self.format} requires a sequence value"
+                raise ValueError(msg)
+
+            if self.format == "YPRAngles" and self.sequence not in YPR_SEQUENCES:
+                msg = f"sequence={self.sequence} not valid for format={self.format}"
+                raise ValueError(msg)
+
+            if self.format == "EulerAngles" and self.sequence not in EULER_SEQUENCES:
+                msg = f"sequence={self.sequence} not valid for format={self.format}"
+                raise ValueError(msg)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(stream={self.stream}, format={self.format})"
+
+    def _make_header(self) -> List[str]:
+        hdr = []
+        hdr.extend(super()._make_header())
+        if self.central_body:
+            hdr.append(f"CentralBody         {self.central_body}")
+        if self.coordinate_axes:
+            hdr.append(f"CoordinateAxes      {self.coordinate_axes}")
+        if self.coordinate_axes_epoch:
+            hdr.append(
+                f"CoordinateAxesEpoch {self.format_time(self.coordinate_axes_epoch)}"
+            )
+        if self.interpolation_method:
+            hdr.append(f"InterpolationMethod {self.interpolation_method}")
+        if self.interpolation_order:
+            hdr.append(f"InterpolationOrder  {self.interpolation_order}")
+        if self.sequence:
+            hdr.append(f"Sequence {self.sequence}")
+
+        hdr.append(f"AttitudeTime{self.format}")
+        return hdr
+
+
 class EphemerisFile(StkFileBase):
     __version__: str = "stk.v.12.0"
     __name__: str = "Ephemeris"
@@ -488,13 +643,17 @@ class IntervalFile(StkFileBase):
         self.validator = validators.none
 
     def _make_header(self) -> List[str]:
-        hdr = super()._make_header()
-        # hdr.append("BEGIN IntervalList")
-        hdr.append("DateUnitAbrv ISO-YMD")
+        # hdr = super()._make_header()
+        hdr = ["stk.v.12.0"]
+        hdr.append("BEGIN IntervalList")
+        hdr.append("    DateUnitAbrv ISO-YMD")
+        hdr.append("BEGIN Intervals")
+        return hdr
 
     def _make_footer(self) -> List[str]:
         ftr = []
-        # ftr.append("END IntervalList")
+        ftr.append("END Intervals")
+        ftr.append("END IntervalList")
         return ftr
 
     def write_batch(
