@@ -1,5 +1,6 @@
 import argparse
 import fileinput
+import sys
 from typing import Literal, Optional, Tuple
 
 import numpy as np
@@ -43,6 +44,9 @@ def main():
         default=None,
         help="coordinate axes epoch",
     )
+    parser_a.add_argument(
+        "-s", "--sequence", type=str, default=None, help="rotation sequence"
+    )
     parser_a.set_defaults(func=attitude)
 
     parser_e = subparsers.add_parser("ephemeris", help="create an ephemeris (.e) file")
@@ -78,6 +82,8 @@ def main():
     args = parser.parse_args()
     if args.output:
         args.stream = args.output
+    else:
+        args.stream = sys.stdout
     args.func(args)  # Call the function for the selected subparser
 
 
@@ -87,6 +93,7 @@ def attitude(args):
         format=args.format,
         coordinate_axes=args.axes,
         coordinate_axes_epoch=args.axes_epoch,
+        sequence=args.sequence,
     ) as a:
         time, data = [], []
         for line in fileinput.input("-"):

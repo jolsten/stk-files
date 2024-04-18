@@ -26,6 +26,9 @@ classifiers = [
 [project.urls]
 repository = "https://github.com/jolsten/stkfiles"
 
+[project.scripts]
+data2stk = "stkfiles.cli.main:main"
+
 [project.optional-dependencies]
 cli = [
   "python-dateutil",
