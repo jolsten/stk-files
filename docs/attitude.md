@@ -2,4 +2,4 @@
 
 ### attitude_file()
 
-::: stkfiles.funcs.attitude_file
+::: stk_files.funcs.attitude_file

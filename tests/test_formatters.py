@@ -1,6 +1,6 @@
 import numpy as np
 
-from stkfiles import formatters
+from stk_files import formatters
 
 
 def test_isoymd():

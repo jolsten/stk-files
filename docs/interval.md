@@ -2,14 +2,14 @@
 
 ### interval_file()
 
-::: stkfiles.funcs.interval_file
+::: stk_files.funcs.interval_file
 
 #### Examples
 
 The two intervals below...
 ```python
 import datetime
-from stkfiles import interval_file
+from stk_files import interval_file
 intervals = [
     (datetime.datetime(2020,1,1,0,0,0), datetime.datetime(2020,1,1,0,10,0)),
     (datetime.datetime(2020,1,2,0,0,0), datetime.datetime(2020,1,2,0,20,0))

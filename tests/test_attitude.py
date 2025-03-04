@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from stkfiles.files import AttitudeFile
+from stk_files.files import AttitudeFile
 
 from . import strategies as cst
 
@@ -33,7 +33,11 @@ def test_quaternions(start, data):
 
 @given(
     st.datetimes(min_value=cst.MIN_DATETIME, max_value=cst.MAX_DATETIME),
-    st.lists(st.floats(min_value=-180, max_value=180), min_size=10, max_size=100),
+    st.lists(
+        st.lists(st.floats(min_value=-180, max_value=180), min_size=3, max_size=3),
+        min_size=10,
+        max_size=100,
+    ),
 )
 def test_eulerangles(start, data):
     sequence = 123

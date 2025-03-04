@@ -2,4 +2,4 @@
 
 ### interval_file()
 
-::: stkfiles.funcs.sensor_file
+::: stk_files.funcs.sensor_file

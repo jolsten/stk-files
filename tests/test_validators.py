@@ -1,6 +1,6 @@
 import numpy as np
 
-from stkfiles import validators
+from stk_files import validators
 
 
 def test_quaternion_all_pass():

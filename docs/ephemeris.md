@@ -2,4 +2,4 @@
 
 ### ephemeris_file()
 
-::: stkfiles.funcs.ephemeris_file
+::: stk_files.funcs.ephemeris_file

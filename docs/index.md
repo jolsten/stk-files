@@ -1,4 +1,4 @@
-# stkfiles
+# stk_files
 
 A Python package to help you create STK data files.
 
@@ -9,7 +9,7 @@ A Python package to help you create STK data files.
 ## Simple Usage
 
 ```python
-from stkfiles import attitude_file
+from stk_files import attitude_file
 
 filename = "file.a"
 time = np.array([

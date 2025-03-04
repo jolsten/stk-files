@@ -2,6 +2,7 @@ import datetime
 import math
 from typing import List, Sequence, Tuple
 
+from hypothesis import assume
 from hypothesis import strategies as st
 
 MIN_DATETIME = datetime.datetime(2000, 1, 1)
@@ -69,10 +70,11 @@ def angles(draw, min_value: float = 0.0, max_value: float = 360.0) -> float:
 
 @st.composite
 def unit_vectors(draw) -> Tuple[float, float, float]:
-    axis = st.tuples(st.floats(min_value=-1, max_value=1))
+    axis = draw(st.lists(st.floats(min_value=-1, max_value=1), min_size=3, max_size=3))
     rss_ = rss(axis)
+    assume(rss_ > 0)
     axis = [x / rss_ for x in axis]
-    return axis
+    return tuple(axis)
 
 
 @st.composite

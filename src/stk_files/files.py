@@ -5,8 +5,8 @@ from typing import List, Optional
 
 import numpy as np
 
-from stkfiles import formatters, validators
-from stkfiles.typing import (
+from stk_files import formatters, validators
+from stk_files.typing import (
     AttitudeFileFormat,
     CentralBody,
     CoordinateAxes,

@@ -1,60 +1,26 @@
-[build-system]
-requires = ["setuptools>=45", "setuptools_scm>=8.0", "wheel"]
-
 [project]
-name = "stkfiles"
-description = "Create select SystemsToolKit (STK) data files"
-readme = {file = "README.md", content-type = "text/markdown"}
-dynamic = ["version"]
-requires-python = ">=3.6"
-license = {file = "LICENSE"}
+name = "stk-files"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Jonathan Olsten", email = "jolsten@gmail.com" }
+]
+requires-python = ">=3.9"
 dependencies = [
-    "numpy>=1.16",
+    "numpy>=2.0",
+    "python-dateutil>=2",
 ]
-classifiers = [
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.6",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-]
-
-[project.urls]
-repository = "https://github.com/jolsten/stkfiles"
 
 [project.scripts]
-data2stk = "stkfiles.cli.main:main"
+stk-files = "stk_files:main"
 
-[project.optional-dependencies]
-cli = [
-  "python-dateutil",
-]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
 dev = [
-  "build",
-  "setuptools>=45",
-  "setuptools_scm[toml]>=6.2",
-  "mkdocs",
-  "mkdocstrings[python]",
-  "wheel",
-  "pytest",
-  "pytest-cov",
-  "hypothesis",
-  "python-dateutil",
-]
-
-[tool.setuptools.packages.find]
-include = ["stkfiles"]
-
-[tool.setuptools_scm]
-version_file = "stkfiles/_version.py"
-
-[tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "--cov=stkfiles --cov-report html"
-testpaths = [
-    "tests",
+    "hypothesis>=6.127.5",
+    "pytest>=8.3.5",
 ]
