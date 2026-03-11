@@ -1,26 +1,50 @@
 [project]
 name = "stk-files"
-version = "0.1.0"
-description = "Add your description here"
+dynamic = ["version"]
+description = "Generate STK external data files"
 readme = "README.md"
-authors = [
-    { name = "Jonathan Olsten", email = "jolsten@gmail.com" }
-]
 requires-python = ">=3.9"
-dependencies = [
-    "numpy>=2.0",
-    "python-dateutil>=2",
-]
+license = "MIT"
+authors = [{ name = "Jonathan Olsten", email = "jolsten@gmail.com" }]
+dependencies = ["numpy>=2.0", "click>=8.0"]
 
 [project.scripts]
-stk-files = "stk_files:main"
+stk-files = "stk_files.cli:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/stk_files/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stk_files"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/stk_files/py.typed" = "stk_files/py.typed"
+
+[tool.mypy]
+strict = true
+python_version = "3.9"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 99
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "TCH", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.127.5",
-    "pytest>=8.3.5",
+    "hypothesis>=6.127",
+    "pytest>=8.3",
+    "mypy>=1.11",
+    "ruff>=0.8",
 ]

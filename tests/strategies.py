@@ -1,85 +1,71 @@
-import datetime
-import math
-from typing import List, Sequence, Tuple
-
-from hypothesis import assume
+import numpy as np
 from hypothesis import strategies as st
-
-MIN_DATETIME = datetime.datetime(2000, 1, 1)
-MAX_DATETIME = datetime.datetime(2030, 1, 1)
+from hypothesis.extra.numpy import arrays
 
 
-@st.composite
-def intervals(
-    draw,
-    min_start: datetime.datetime = MIN_DATETIME,
-    max_start: datetime.datetime = MAX_DATETIME,
-    min_dur: int = 60,
-    max_dur: int = 300,
-) -> Tuple[datetime.datetime, datetime.datetime]:
-    start = draw(st.datetimes(min_value=min_start, max_value=max_start))
-    dur = draw(st.floats(min_value=min_dur, max_value=max_dur))
-    stop = start + datetime.timedelta(seconds=dur)
-    return start, stop
+def rss(a: np.ndarray) -> float:  # type: ignore[type-arg]
+    """Root sum of squares."""
+    return float(np.sqrt(np.sum(a**2)))
+
+
+def axang2quat(axis: np.ndarray, angle: float) -> np.ndarray:  # type: ignore[type-arg]
+    """Convert axis-angle to quaternion (scalar-last)."""
+    axis = axis / np.linalg.norm(axis)
+    s = np.sin(angle / 2)
+    c = np.cos(angle / 2)
+    return np.array([axis[0] * s, axis[1] * s, axis[2] * s, c])
 
 
 @st.composite
-def interval_lists(
-    draw,
-    min_size: int = 1,
-    max_size: int = 100,
-    min_start: datetime.datetime = MIN_DATETIME,
-    max_start: datetime.datetime = MAX_DATETIME,
-    min_dur: int = 60,
-    max_dur: int = 300,
-) -> List[Tuple[datetime.datetime, datetime.datetime]]:
-    interval_list = draw(
-        st.lists(
-            intervals(
-                min_start=min_start,
-                max_start=max_start,
-                min_dur=min_dur,
-                max_dur=max_dur,
-            ),
-            min_size=min_size,
-            max_size=max_size,
-        )
-    )
-    return interval_list
-
-
-def axang2quat(
-    axis: Tuple[float, float, float], theta_deg: float
-) -> Tuple[float, float, float, float]:
-    theta = theta_deg * math.pi / 180
-    q0 = math.cos(theta / 2)
-    q1 = math.sin(theta / 2) * axis[0]
-    q2 = math.sin(theta / 2) * axis[1]
-    q3 = math.sin(theta / 2) * axis[2]
-    return q0, q1, q2, q3
-
-
-def rss(parts: Sequence[float]) -> float:
-    return math.sqrt(sum([x**2 for x in parts]))
+def unit_vectors(draw: st.DrawFn) -> np.ndarray:  # type: ignore[type-arg]
+    """Generate random unit vectors."""
+    v = draw(arrays(np.float64, (3,), elements=st.floats(-1, 1, allow_nan=False)))
+    norm = np.linalg.norm(v)
+    if norm < 1e-10:
+        return np.array([1.0, 0.0, 0.0])
+    return v / norm  # type: ignore[no-any-return]
 
 
 @st.composite
-def angles(draw, min_value: float = 0.0, max_value: float = 360.0) -> float:
-    return draw(st.floats(min_value=min_value, max_value=max_value))
-
-
-@st.composite
-def unit_vectors(draw) -> Tuple[float, float, float]:
-    axis = draw(st.lists(st.floats(min_value=-1, max_value=1), min_size=3, max_size=3))
-    rss_ = rss(axis)
-    assume(rss_ > 0)
-    axis = [x / rss_ for x in axis]
-    return tuple(axis)
-
-
-@st.composite
-def quaternions(draw) -> Tuple[float, float, float, float]:
+def quaternions(draw: st.DrawFn) -> np.ndarray:  # type: ignore[type-arg]
+    """Generate valid unit quaternions (scalar-last)."""
     axis = draw(unit_vectors())
-    angle = draw(angles())
-    q0, q1, q2, q3 = axang2quat(axis, angle)
-    return q1, q2, q3, q0
+    angle = draw(st.floats(0, 2 * np.pi, allow_nan=False, allow_infinity=False))
+    return axang2quat(axis, angle)
+
+
+@st.composite
+def angles(draw: st.DrawFn, lo: float = -180.0, hi: float = 360.0) -> float:
+    """Generate random angles in range."""
+    return draw(st.floats(lo, hi, allow_nan=False, allow_infinity=False))
+
+
+@st.composite
+def datetime64s(
+    draw: st.DrawFn,
+    start: str = "2000-01-01",
+    end: str = "2030-01-01",
+) -> np.datetime64:
+    """Generate random datetime64[ms] values."""
+    s = np.datetime64(start, "ms")
+    e = np.datetime64(end, "ms")
+    delta = int((e - s) / np.timedelta64(1, "ms"))
+    offset = draw(st.integers(0, delta))
+    return s + np.timedelta64(offset, "ms")
+
+
+@st.composite
+def sorted_datetime64_arrays(
+    draw: st.DrawFn,
+    min_size: int = 3,
+    max_size: int = 50,
+    start: str = "2000-01-01",
+    end: str = "2030-01-01",
+) -> np.ndarray:  # type: ignore[type-arg]
+    """Generate sorted arrays of unique datetime64[ms] values."""
+    n = draw(st.integers(min_size, max_size))
+    times = sorted(set(draw(st.lists(datetime64s(start, end), min_size=n, max_size=n * 2))))
+    if len(times) < min_size:
+        base = np.datetime64(start, "ms")
+        times = [base + np.timedelta64(i * 1000, "ms") for i in range(min_size)]
+    return np.array(times[:max_size], dtype="datetime64[ms]")
