@@ -131,3 +131,9 @@ dmypy.json
 
 # VSCode
 .vscode/
+
+# ruff
+.ruff_cache/
+
+# claude
+.claude/settings.local.json

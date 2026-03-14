@@ -21,6 +21,7 @@ mypy src/                  # Type check (strict mode)
   - `_types.py` — type literals, column count dicts, format constants
   - `_validation.py` — shape/quaternion/angle/sequence validation + filtering
   - `_formatting.py` — row formatting (ISO-YMD timestamps, EpSec, quaternions, generic)
+  - `_coerce.py` — runtime coercion of pandas/polars Series/DataFrames to numpy arrays
   - `_writer.py` — `stk_writer()` context manager, `RowWriter`
   - `cli.py` — Click CLI with subcommands (attitude, ephemeris, interval, sensor)
   - `__init__.py` — public API exports
@@ -32,7 +33,8 @@ mypy src/                  # Type check (strict mode)
 - **Python >=3.9**, strict mypy, ruff (line-length 99)
 - Private modules prefixed with `_`, config classes suffixed with `Config`
 - `from __future__ import annotations` in all modules
-- Timestamps are `np.datetime64[ms]`; data arrays are numpy ndarrays
+- Timestamps are `np.datetime64[ms]`; data arrays are numpy ndarrays (pandas/polars inputs are coerced automatically via `_coerce.py`)
+- pandas and polars are optional dependencies (`pip install stk-files[pandas]` / `stk-files[polars]`)
 - Validation has strict mode (raise on invalid) and non-strict (filter invalid rows)
 - Frozen dataclasses for configs; each config has `header()` and `footer()` methods
 - Tests use hypothesis property-based testing with custom strategies in `strategies.py`

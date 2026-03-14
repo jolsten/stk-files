@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, TextIO
 
 import numpy as np
 
+from stk_files._coerce import coerce_data, coerce_times
 from stk_files._formatting import (
     format_ep_sec_array,
     format_generic_block,
@@ -134,8 +135,8 @@ class AttitudeChunkWriter:
         data: NDArray[np.floating],
     ) -> None:
         """Validate, format, and write a chunk of attitude data."""
-        times = np.atleast_1d(times)
-        data = np.atleast_2d(data)
+        times = np.atleast_1d(coerce_times(times))
+        data = np.atleast_2d(coerce_data(data))
         if times.shape[0] == 0:
             return
         validate_shape(times, data, self._expected_cols)
@@ -190,8 +191,8 @@ def write_attitude(
 ) -> None:
     """Write a complete attitude file to a stream."""
     expected_cols = ATTITUDE_COLUMNS[config.format]
-    times = np.atleast_1d(times)
-    data = np.atleast_2d(data)
+    times = np.atleast_1d(coerce_times(times))
+    data = np.atleast_2d(coerce_data(data))
     validate_shape(times, data, expected_cols)
     if not presorted:
         times, data = sort_by_time(times, data)
