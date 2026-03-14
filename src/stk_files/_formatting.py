@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from stk_files._types import QUATERNION_FORMATS
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -70,3 +72,28 @@ def format_generic_block(data: NDArray[np.floating]) -> list[str]:
     for c in cols[1:]:
         result = np.char.add(np.char.add(result, " "), c)
     return result.tolist()  # type: ignore[no-any-return]
+
+
+# ---------------------------------------------------------------------------
+# Shared high-level formatters (used by all writer modules)
+# ---------------------------------------------------------------------------
+
+
+def format_times(
+    time_format: str,
+    times: NDArray[np.datetime64],
+    scenario_epoch: np.datetime64 | None = None,
+) -> list[str]:
+    """Format a time array based on the time format setting."""
+    if time_format == "EpSec":
+        if scenario_epoch is None:
+            raise ValueError("EpSec time format requires scenario_epoch")
+        return format_ep_sec_array(times, scenario_epoch)
+    return format_iso_ymd_array(times)
+
+
+def format_data_block(fmt: str, data: NDArray[np.floating]) -> list[str]:
+    """Format a data array using quaternion or generic formatting."""
+    if fmt in QUATERNION_FORMATS:
+        return format_quaternion_block(data)
+    return format_generic_block(data)

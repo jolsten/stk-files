@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TextIO
 
+from stk_files._parser import parse_interval_file
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
@@ -60,3 +62,14 @@ def write_interval(
                 w.write_row(f'"{t0}" "{t1}"', iv.data)
             else:
                 w.write_row(f'"{t0}"', f'"{t1}"')
+
+
+def read_interval(
+    stream: TextIO,
+) -> tuple[IntervalConfig, list[Interval]]:
+    """Read an STK interval list file and return ``(config, intervals)``."""
+    lines = [line.rstrip("\n\r") for line in stream]
+    parsed = parse_interval_file(lines)
+    config = IntervalConfig()
+    intervals = [Interval(start=s, end=e, data=d) for s, e, d in parsed]
+    return config, intervals

@@ -2,21 +2,12 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TextIO
+from typing import TYPE_CHECKING, TextIO, cast
 
-import numpy as np
-
-from stk_files._coerce import coerce_data, coerce_times
-from stk_files._formatting import (
-    format_ep_sec_array,
-    format_generic_block,
-    format_iso_ymd,
-    format_iso_ymd_array,
-    format_quaternion_block,
-)
+from stk_files._formatting import format_iso_ymd
+from stk_files._parser import STKParseError, parse_data_section, parse_datetime, parse_header
 from stk_files._types import (
     ATTITUDE_COLUMNS,
-    QUATERNION_FORMATS,
     AttitudeFormat,
     CentralBody,
     EulerSequence,
@@ -25,19 +16,13 @@ from stk_files._types import (
     TimeFormat,
     YPRSequence,
 )
-from stk_files._validation import (
-    sort_by_time,
-    validate_data,
-    validate_epoch_axes,
-    validate_sequence,
-    validate_shape,
-    validate_times,
-)
-from stk_files._writer import stk_writer
+from stk_files._validation import validate_epoch_axes, validate_sequence
+from stk_files._writer import BaseChunkWriter, RowWriter, prepare_data, stk_writer, write_blocks
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    import numpy as np
     from numpy.typing import NDArray
 
 
@@ -87,25 +72,7 @@ class AttitudeConfig:
         return ["END Attitude"]
 
 
-def _format_times(
-    config: AttitudeConfig,
-    times: NDArray[np.datetime64],
-) -> list[str]:
-    if config.time_format == "EpSec":
-        epoch = config.scenario_epoch
-        if epoch is None:
-            raise ValueError("EpSec time format requires scenario_epoch")
-        return format_ep_sec_array(times, epoch)
-    return format_iso_ymd_array(times)
-
-
-def _format_data(fmt: str, data: NDArray[np.floating]) -> list[str]:
-    if fmt in QUATERNION_FORMATS:
-        return format_quaternion_block(data)
-    return format_generic_block(data)
-
-
-class AttitudeChunkWriter:
+class AttitudeChunkWriter(BaseChunkWriter):
     """Streaming writer returned by :func:`attitude_writer`.
 
     Each call to :meth:`write_chunk` validates, formats, and appends one
@@ -116,53 +83,22 @@ class AttitudeChunkWriter:
 
     def __init__(
         self,
-        writer: object,
+        writer: RowWriter,
         config: AttitudeConfig,
         *,
         strict: bool = False,
         max_rate: float | None = None,
     ) -> None:
-        self._writer = writer  # RowWriter
-        self._config = config
-        self._strict = strict
-        self._max_rate = max_rate
-        self._expected_cols = ATTITUDE_COLUMNS[config.format]
-        self._last_time: np.datetime64 | None = None
-
-    def write_chunk(
-        self,
-        times: NDArray[np.datetime64],
-        data: NDArray[np.floating],
-    ) -> None:
-        """Validate, format, and write a chunk of attitude data."""
-        times = np.atleast_1d(coerce_times(times))
-        data = np.atleast_2d(coerce_data(data))
-        if times.shape[0] == 0:
-            return
-        validate_shape(times, data, self._expected_cols)
-        validate_times(times)
-
-        times, data = validate_data(
-            self._config.format,
-            times,
-            data,
-            strict=self._strict,
-            max_rate=self._max_rate,
-            sequence=self._config.sequence,
+        super().__init__(
+            writer,
+            fmt=config.format,
+            expected_cols=ATTITUDE_COLUMNS[config.format],
+            time_format=config.time_format,
+            scenario_epoch=config.scenario_epoch,
+            sequence=config.sequence,
+            strict=strict,
+            max_rate=max_rate,
         )
-        if times.shape[0] == 0:
-            return
-
-        # Cross-chunk time continuity (checked after filtering)
-        if self._last_time is not None and times[0] <= self._last_time:
-            raise ValueError(
-                f"chunk starts at {times[0]} but previous chunk ended at {self._last_time}"
-            )
-
-        time_strs = _format_times(self._config, times)
-        data_strs = _format_data(self._config.format, data)
-        self._writer.write_block(time_strs, data_strs)  # type: ignore[attr-defined]
-        self._last_time = times[-1]
 
 
 @contextlib.contextmanager
@@ -190,34 +126,68 @@ def write_attitude(
     chunk_size: int | None = None,
 ) -> None:
     """Write a complete attitude file to a stream."""
-    expected_cols = ATTITUDE_COLUMNS[config.format]
-    times = np.atleast_1d(coerce_times(times))
-    data = np.atleast_2d(coerce_data(data))
-    validate_shape(times, data, expected_cols)
-    if not presorted:
-        times, data = sort_by_time(times, data)
-    validate_times(times)
-    times, data = validate_data(
+    times, data = prepare_data(
         config.format,
+        ATTITUDE_COLUMNS,
         times,
         data,
         strict=strict,
         max_rate=max_rate,
+        presorted=presorted,
         sequence=config.sequence,
     )
-    if times.shape[0] == 0:
-        raise ValueError("no valid data rows after validation")
+    write_blocks(
+        stream,
+        config.header_lines(),
+        config.footer_lines(),
+        config.time_format,
+        config.scenario_epoch,
+        config.format,
+        times,
+        data,
+        chunk_size,
+    )
 
-    if chunk_size is not None:
-        # Chunked write — data is already validated, just format in chunks
-        with stk_writer(stream, config.header_lines(), config.footer_lines()) as w:
-            for start in range(0, len(times), chunk_size):
-                end = min(start + chunk_size, len(times))
-                time_strs = _format_times(config, times[start:end])
-                data_strs = _format_data(config.format, data[start:end])
-                w.write_block(time_strs, data_strs)
-    else:
-        time_strs = _format_times(config, times)
-        data_strs = _format_data(config.format, data)
-        with stk_writer(stream, config.header_lines(), config.footer_lines()) as w:
-            w.write_block(time_strs, data_strs)
+
+def read_attitude(
+    stream: TextIO,
+) -> tuple[AttitudeConfig, NDArray[np.datetime64], NDArray[np.floating]]:
+    """Read an STK attitude file and return ``(config, times, data)``."""
+    lines = [line.rstrip("\n\r") for line in stream]
+    header, fmt, data_start = parse_header(lines, "AttitudeTime")
+
+    if fmt not in ATTITUDE_COLUMNS:
+        raise STKParseError(f"unknown attitude format: {fmt!r}")
+
+    time_format = header.get("TimeFormat", "ISO-YMD")
+    scenario_epoch = (
+        parse_datetime(header["ScenarioEpoch"]) if "ScenarioEpoch" in header else None
+    )
+    axes_epoch = (
+        parse_datetime(header["CoordinateAxesEpoch"])
+        if "CoordinateAxesEpoch" in header
+        else None
+    )
+    sequence = int(header["Sequence"]) if "Sequence" in header else None
+
+    config = AttitudeConfig(
+        format=cast("AttitudeFormat", fmt),
+        coordinate_axes=header.get("CoordinateAxes", "ICRF"),
+        message_level=cast("MessageLevel | None", header.get("MessageLevel")),
+        time_format=cast("TimeFormat", time_format),
+        scenario_epoch=scenario_epoch,
+        central_body=cast("CentralBody | None", header.get("CentralBody")),
+        coordinate_axes_epoch=axes_epoch,
+        interpolation_method=cast(
+            "InterpolationMethod | None", header.get("InterpolationMethod")
+        ),
+        interpolation_order=(
+            int(header["InterpolationOrder"]) if "InterpolationOrder" in header else None
+        ),
+        sequence=cast("EulerSequence | YPRSequence | None", sequence),
+    )
+
+    times, data = parse_data_section(
+        lines, data_start, time_format, ATTITUDE_COLUMNS[fmt], scenario_epoch
+    )
+    return config, times, data

@@ -39,7 +39,11 @@ class TestDetectAvailability:
             dtype="datetime64[ms]",
         )
         max_gap = np.timedelta64(30, "s")
+        # Default min_points=2 filters out single-point spans
         spans = detect_availability(times, max_gap)
+        assert len(spans) == 0
+        # min_points=1 preserves all spans
+        spans = detect_availability(times, max_gap, min_points=1)
         assert len(spans) == 3
 
     def test_empty(self) -> None:
@@ -47,9 +51,14 @@ class TestDetectAvailability:
         spans = detect_availability(times, np.timedelta64(5, "s"))
         assert spans == []
 
-    def test_single_point(self) -> None:
+    def test_single_point_default_excluded(self) -> None:
         times = np.array(["2020-01-01T00:00:00"], dtype="datetime64[ms]")
         spans = detect_availability(times, np.timedelta64(5, "s"))
+        assert len(spans) == 0
+
+    def test_single_point_min_points_1(self) -> None:
+        times = np.array(["2020-01-01T00:00:00"], dtype="datetime64[ms]")
+        spans = detect_availability(times, np.timedelta64(5, "s"), min_points=1)
         assert len(spans) == 1
         assert spans[0][0] == spans[0][1]
 
@@ -70,7 +79,11 @@ class TestDetectAvailability:
             dtype="datetime64[ms]",
         )
         max_gap = np.timedelta64(5, "s")
+        # Default min_points=2 filters single-point spans
         spans = detect_availability(times, max_gap)
+        assert len(spans) == 0
+        # min_points=1 preserves them
+        spans = detect_availability(times, max_gap, min_points=1)
         assert len(spans) == 2
 
 

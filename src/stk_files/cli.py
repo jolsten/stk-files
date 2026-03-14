@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import sys
 from typing import TYPE_CHECKING, TextIO, cast
 
@@ -7,6 +8,8 @@ import click
 import numpy as np
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from numpy.typing import NDArray
 
 from stk_files._types import (
@@ -78,11 +81,17 @@ def _parse_interval_lines(
     return intervals
 
 
-def _open_output(output: str | None) -> TextIO:
-    """Return output stream."""
+@contextlib.contextmanager
+def _open_output(output: str | None) -> Iterator[TextIO]:
+    """Context manager returning the output stream."""
     if output is None:
-        return sys.stdout
-    return open(output, "w")
+        yield sys.stdout
+    else:
+        f = open(output, "w")  # noqa: SIM115
+        try:
+            yield f
+        finally:
+            f.close()
 
 
 def _as_attitude_format(value: str) -> AttitudeFormat:
@@ -158,12 +167,8 @@ def attitude(
         interpolation_order=interpolation_order,
         sequence=cast("EulerSequence | YPRSequence | None", sequence),
     )
-    stream = _open_output(output)
-    try:
+    with _open_output(output) as stream:
         write_attitude(stream, config, times, data, presorted=True)
-    finally:
-        if stream is not sys.stdout:
-            stream.close()
 
 
 @main.command()
@@ -210,12 +215,8 @@ def ephemeris(
         interpolation_method=cast("InterpolationMethod | None", interpolation_method),
         interpolation_order=interpolation_order,
     )
-    stream = _open_output(output)
-    try:
+    with _open_output(output) as stream:
         write_ephemeris(stream, config, times, data, presorted=True)
-    finally:
-        if stream is not sys.stdout:
-            stream.close()
 
 
 @main.command()
@@ -227,12 +228,8 @@ def interval(
 ) -> None:
     """Generate an STK interval list file (.int) from stdin data."""
     intervals = _parse_interval_lines(delimiter)
-    stream = _open_output(output)
-    try:
+    with _open_output(output) as stream:
         write_interval(stream, intervals)
-    finally:
-        if stream is not sys.stdout:
-            stream.close()
 
 
 @main.command()
@@ -269,9 +266,5 @@ def sensor(
         scenario_epoch=(np.datetime64(scenario_epoch, "ms") if scenario_epoch else None),
         sequence=cast("EulerSequence | YPRSequence | None", sequence),
     )
-    stream = _open_output(output)
-    try:
+    with _open_output(output) as stream:
         write_sensor(stream, config, times, data, presorted=True)
-    finally:
-        if stream is not sys.stdout:
-            stream.close()

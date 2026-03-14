@@ -187,6 +187,20 @@ def validate_epoch_axes(
 # ---------------------------------------------------------------------------
 
 
+def _quat_multiply_batch(q1: NDArray, q2: NDArray) -> NDArray:
+    """Multiply arrays of scalar-last quaternions element-wise."""
+    x1, y1, z1, w1 = q1[:, 0], q1[:, 1], q1[:, 2], q1[:, 3]
+    x2, y2, z2, w2 = q2[:, 0], q2[:, 1], q2[:, 2], q2[:, 3]
+    return np.column_stack(
+        [
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        ]
+    )
+
+
 def _euler_to_quaternions(
     data: NDArray[np.floating],
     sequence: int,
@@ -194,15 +208,15 @@ def _euler_to_quaternions(
     """Convert Euler/YPR/AzEl angle rows (degrees) to scalar-last quaternions."""
     rad = np.deg2rad(data)
     axes = [int(d) - 1 for d in str(sequence)]  # e.g. 321 -> [2, 1, 0]
-    result = np.zeros((data.shape[0], 4), dtype=np.float64)
-    for i in range(data.shape[0]):
-        q = np.array([0.0, 0.0, 0.0, 1.0])
-        for j, ax in enumerate(axes):
-            half = rad[i, j] / 2.0
-            qi = np.array([0.0, 0.0, 0.0, np.cos(half)])
-            qi[ax] = np.sin(half)
-            q = _quat_multiply(q, qi)
-        result[i] = q
+    n = data.shape[0]
+    result = np.zeros((n, 4), dtype=np.float64)
+    result[:, 3] = 1.0  # identity quaternions
+    for j, ax in enumerate(axes):
+        half = rad[:, j] / 2.0
+        qi = np.zeros((n, 4), dtype=np.float64)
+        qi[:, 3] = np.cos(half)
+        qi[:, ax] = np.sin(half)
+        result = _quat_multiply_batch(result, qi)
     return result
 
 
@@ -211,44 +225,45 @@ def _dcm_to_quaternions(
 ) -> NDArray[np.floating]:
     """Convert 9-column DCM rows to scalar-last quaternions (Shepperd's method)."""
     n = data.shape[0]
+    m = data.reshape(n, 3, 3)
+    tr = np.trace(m, axis1=1, axis2=2)
+
+    vals = np.column_stack([tr, m[:, 0, 0], m[:, 1, 1], m[:, 2, 2]])
+    k = np.argmax(vals, axis=1)
+
     result = np.zeros((n, 4), dtype=np.float64)
-    for i in range(n):
-        m = data[i].reshape(3, 3)
-        tr = np.trace(m)
-        vals = np.array([tr, m[0, 0], m[1, 1], m[2, 2]])
-        k = np.argmax(vals)
-        if k == 0:
-            s = 2.0 * np.sqrt(1.0 + tr)
-            result[i] = [
-                (m[2, 1] - m[1, 2]) / s,
-                (m[0, 2] - m[2, 0]) / s,
-                (m[1, 0] - m[0, 1]) / s,
-                s / 4.0,
-            ]
-        elif k == 1:
-            s = 2.0 * np.sqrt(1.0 + 2 * m[0, 0] - tr)
-            result[i] = [
-                s / 4.0,
-                (m[0, 1] + m[1, 0]) / s,
-                (m[0, 2] + m[2, 0]) / s,
-                (m[2, 1] - m[1, 2]) / s,
-            ]
-        elif k == 2:
-            s = 2.0 * np.sqrt(1.0 + 2 * m[1, 1] - tr)
-            result[i] = [
-                (m[0, 1] + m[1, 0]) / s,
-                s / 4.0,
-                (m[1, 2] + m[2, 1]) / s,
-                (m[0, 2] - m[2, 0]) / s,
-            ]
+
+    for case in range(4):
+        mask = k == case
+        if not np.any(mask):
+            continue
+        mm = m[mask]
+        trm = tr[mask]
+        if case == 0:
+            s = 2.0 * np.sqrt(1.0 + trm)
+            result[mask, 0] = (mm[:, 2, 1] - mm[:, 1, 2]) / s
+            result[mask, 1] = (mm[:, 0, 2] - mm[:, 2, 0]) / s
+            result[mask, 2] = (mm[:, 1, 0] - mm[:, 0, 1]) / s
+            result[mask, 3] = s / 4.0
+        elif case == 1:
+            s = 2.0 * np.sqrt(1.0 + 2 * mm[:, 0, 0] - trm)
+            result[mask, 0] = s / 4.0
+            result[mask, 1] = (mm[:, 0, 1] + mm[:, 1, 0]) / s
+            result[mask, 2] = (mm[:, 0, 2] + mm[:, 2, 0]) / s
+            result[mask, 3] = (mm[:, 2, 1] - mm[:, 1, 2]) / s
+        elif case == 2:
+            s = 2.0 * np.sqrt(1.0 + 2 * mm[:, 1, 1] - trm)
+            result[mask, 0] = (mm[:, 0, 1] + mm[:, 1, 0]) / s
+            result[mask, 1] = s / 4.0
+            result[mask, 2] = (mm[:, 1, 2] + mm[:, 2, 1]) / s
+            result[mask, 3] = (mm[:, 0, 2] - mm[:, 2, 0]) / s
         else:
-            s = 2.0 * np.sqrt(1.0 + 2 * m[2, 2] - tr)
-            result[i] = [
-                (m[0, 2] + m[2, 0]) / s,
-                (m[1, 2] + m[2, 1]) / s,
-                s / 4.0,
-                (m[1, 0] - m[0, 1]) / s,
-            ]
+            s = 2.0 * np.sqrt(1.0 + 2 * mm[:, 2, 2] - trm)
+            result[mask, 0] = (mm[:, 0, 2] + mm[:, 2, 0]) / s
+            result[mask, 1] = (mm[:, 1, 2] + mm[:, 2, 1]) / s
+            result[mask, 2] = s / 4.0
+            result[mask, 3] = (mm[:, 1, 0] - mm[:, 0, 1]) / s
+
     return result
 
 

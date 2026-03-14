@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Literal, Union
 
 import numpy as np
@@ -17,6 +19,10 @@ CoordinateAxes = Literal[
     "TrueOfDate",
     "MeanOfDate",
     "TEMEOfDate",
+    "MeanOfEpoch",
+    "TrueOfEpoch",
+    "TEMEOfEpoch",
+    "AlignmentAtEpoch",
 ]
 
 InterpolationMethod = Literal["Lagrange", "Hermite"]

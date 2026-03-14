@@ -1,47 +1,56 @@
 """Runtime coercion of pandas/polars types to numpy arrays.
 
 Both pandas and polars are optional dependencies. This module uses
-``isinstance`` checks with lazy imports so that users who only work
-with numpy never pay for the import cost.
+``isinstance`` checks with cached lazy imports so that users who only
+work with numpy never pay for the import cost.
 """
 
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 import numpy as np
 
 
-def _is_pandas_series(obj: Any) -> bool:
+@functools.lru_cache(maxsize=1)
+def _pandas_types() -> tuple[Any, Any]:
     try:
         import pandas as pd
+
+        return pd.Series, pd.DataFrame
     except ImportError:  # pragma: no cover
-        return False
-    return isinstance(obj, pd.Series)
+        return None, None
+
+
+@functools.lru_cache(maxsize=1)
+def _polars_types() -> tuple[Any, Any]:
+    try:
+        import polars as pl
+
+        return pl.Series, pl.DataFrame
+    except ImportError:  # pragma: no cover
+        return None, None
+
+
+def _is_pandas_series(obj: Any) -> bool:
+    cls, _ = _pandas_types()
+    return cls is not None and isinstance(obj, cls)
 
 
 def _is_pandas_dataframe(obj: Any) -> bool:
-    try:
-        import pandas as pd
-    except ImportError:  # pragma: no cover
-        return False
-    return isinstance(obj, pd.DataFrame)
+    _, cls = _pandas_types()
+    return cls is not None and isinstance(obj, cls)
 
 
 def _is_polars_series(obj: Any) -> bool:
-    try:
-        import polars as pl
-    except ImportError:  # pragma: no cover
-        return False
-    return isinstance(obj, pl.Series)
+    cls, _ = _polars_types()
+    return cls is not None and isinstance(obj, cls)
 
 
 def _is_polars_dataframe(obj: Any) -> bool:
-    try:
-        import polars as pl
-    except ImportError:  # pragma: no cover
-        return False
-    return isinstance(obj, pl.DataFrame)
+    _, cls = _polars_types()
+    return cls is not None and isinstance(obj, cls)
 
 
 def coerce_times(times: Any) -> Any:

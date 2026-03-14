@@ -43,9 +43,9 @@ class TestCoerceTimes:
         assert result.shape == (2,)
 
     def test_polars_series(self, times_np: np.ndarray) -> None:
-        from stk_files._coerce import coerce_times
-
         from datetime import datetime
+
+        from stk_files._coerce import coerce_times
 
         ts = pl.Series(
             "t",

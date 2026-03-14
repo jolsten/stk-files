@@ -2,17 +2,10 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TextIO
+from typing import TYPE_CHECKING, TextIO, cast
 
-import numpy as np
-
-from stk_files._coerce import coerce_data, coerce_times
-from stk_files._formatting import (
-    format_ep_sec_array,
-    format_generic_block,
-    format_iso_ymd,
-    format_iso_ymd_array,
-)
+from stk_files._formatting import format_iso_ymd
+from stk_files._parser import STKParseError, parse_data_section, parse_datetime, parse_header
 from stk_files._types import (
     EPHEMERIS_COLUMNS,
     CentralBody,
@@ -21,18 +14,13 @@ from stk_files._types import (
     MessageLevel,
     TimeFormat,
 )
-from stk_files._validation import (
-    sort_by_time,
-    validate_data,
-    validate_epoch_axes,
-    validate_shape,
-    validate_times,
-)
-from stk_files._writer import stk_writer
+from stk_files._validation import validate_epoch_axes
+from stk_files._writer import BaseChunkWriter, RowWriter, prepare_data, stk_writer, write_blocks
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    import numpy as np
     from numpy.typing import NDArray
 
 
@@ -80,19 +68,7 @@ class EphemerisConfig:
         return ["END Ephemeris"]
 
 
-def _format_times(
-    config: EphemerisConfig,
-    times: NDArray[np.datetime64],
-) -> list[str]:
-    if config.time_format == "EpSec":
-        epoch = config.scenario_epoch
-        if epoch is None:
-            raise ValueError("EpSec time format requires scenario_epoch")
-        return format_ep_sec_array(times, epoch)
-    return format_iso_ymd_array(times)
-
-
-class EphemerisChunkWriter:
+class EphemerisChunkWriter(BaseChunkWriter):
     """Streaming writer returned by :func:`ephemeris_writer`.
 
     Each call to :meth:`write_chunk` validates, formats, and appends one
@@ -102,52 +78,21 @@ class EphemerisChunkWriter:
 
     def __init__(
         self,
-        writer: object,
+        writer: RowWriter,
         config: EphemerisConfig,
         *,
         strict: bool = False,
         max_rate: float | None = None,
     ) -> None:
-        self._writer = writer
-        self._config = config
-        self._strict = strict
-        self._max_rate = max_rate
-        self._expected_cols = EPHEMERIS_COLUMNS[config.format]
-        self._last_time: np.datetime64 | None = None
-
-    def write_chunk(
-        self,
-        times: NDArray[np.datetime64],
-        data: NDArray[np.floating],
-    ) -> None:
-        """Validate, format, and write a chunk of ephemeris data."""
-        times = np.atleast_1d(coerce_times(times))
-        data = np.atleast_2d(coerce_data(data))
-        if times.shape[0] == 0:
-            return
-        validate_shape(times, data, self._expected_cols)
-        validate_times(times)
-
-        times, data = validate_data(
-            self._config.format,
-            times,
-            data,
-            strict=self._strict,
-            max_rate=self._max_rate,
+        super().__init__(
+            writer,
+            fmt=config.format,
+            expected_cols=EPHEMERIS_COLUMNS[config.format],
+            time_format=config.time_format,
+            scenario_epoch=config.scenario_epoch,
+            strict=strict,
+            max_rate=max_rate,
         )
-        if times.shape[0] == 0:
-            return
-
-        # Cross-chunk time continuity (checked after filtering)
-        if self._last_time is not None and times[0] <= self._last_time:
-            raise ValueError(
-                f"chunk starts at {times[0]} but previous chunk ended at {self._last_time}"
-            )
-
-        time_strs = _format_times(self._config, times)
-        data_strs = format_generic_block(data)
-        self._writer.write_block(time_strs, data_strs)  # type: ignore[attr-defined]
-        self._last_time = times[-1]
 
 
 @contextlib.contextmanager
@@ -181,34 +126,67 @@ def write_ephemeris(
     chunk_size: int | None = None,
 ) -> None:
     """Write a complete ephemeris file to a stream."""
-    expected_cols = EPHEMERIS_COLUMNS[config.format]
-    times = np.atleast_1d(coerce_times(times))
-    data = np.atleast_2d(coerce_data(data))
-    validate_shape(times, data, expected_cols)
-    if not presorted:
-        times, data = sort_by_time(times, data)
-    validate_times(times)
-    times, data = validate_data(
+    times, data = prepare_data(
         config.format,
+        EPHEMERIS_COLUMNS,
         times,
         data,
         strict=strict,
         max_rate=max_rate,
+        presorted=presorted,
     )
-    if times.shape[0] == 0:
-        raise ValueError("no valid data rows after validation")
+    write_blocks(
+        stream,
+        config.header_lines(num_points=len(times)),
+        config.footer_lines(),
+        config.time_format,
+        config.scenario_epoch,
+        config.format,
+        times,
+        data,
+        chunk_size,
+    )
 
-    header = config.header_lines(num_points=len(times))
 
-    if chunk_size is not None:
-        with stk_writer(stream, header, config.footer_lines()) as w:
-            for start in range(0, len(times), chunk_size):
-                end = min(start + chunk_size, len(times))
-                time_strs = _format_times(config, times[start:end])
-                data_strs = format_generic_block(data[start:end])
-                w.write_block(time_strs, data_strs)
-    else:
-        time_strs = _format_times(config, times)
-        data_strs = format_generic_block(data)
-        with stk_writer(stream, header, config.footer_lines()) as w:
-            w.write_block(time_strs, data_strs)
+def read_ephemeris(
+    stream: TextIO,
+) -> tuple[EphemerisConfig, NDArray[np.datetime64], NDArray[np.floating]]:
+    """Read an STK ephemeris file and return ``(config, times, data)``."""
+    lines = [line.rstrip("\n\r") for line in stream]
+    header, fmt, data_start = parse_header(lines, "Ephemeris")
+
+    if fmt not in EPHEMERIS_COLUMNS:
+        raise STKParseError(f"unknown ephemeris format: {fmt!r}")
+
+    time_format = header.get("TimeFormat", "ISO-YMD")
+    scenario_epoch = (
+        parse_datetime(header["ScenarioEpoch"]) if "ScenarioEpoch" in header else None
+    )
+    coord_epoch = (
+        parse_datetime(header["CoordinateSystemEpoch"])
+        if "CoordinateSystemEpoch" in header
+        else None
+    )
+
+    config = EphemerisConfig(
+        format=cast("EphemerisFormat", fmt),
+        coordinate_system=header.get("CoordinateSystem", "ICRF"),
+        message_level=cast("MessageLevel | None", header.get("MessageLevel")),
+        time_format=cast("TimeFormat", time_format),
+        scenario_epoch=scenario_epoch,
+        central_body=cast("CentralBody | None", header.get("CentralBody")),
+        coordinate_system_epoch=coord_epoch,
+        interpolation_method=cast(
+            "InterpolationMethod | None", header.get("InterpolationMethod")
+        ),
+        interpolation_order=(
+            int(header["InterpolationSamplesM1"])
+            if "InterpolationSamplesM1" in header
+            else None
+        ),
+    )
+
+    times, data = parse_data_section(
+        lines, data_start, time_format, EPHEMERIS_COLUMNS[fmt], scenario_epoch
+    )
+    return config, times, data
